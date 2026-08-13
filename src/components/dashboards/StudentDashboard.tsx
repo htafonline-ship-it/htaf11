@@ -165,7 +165,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   // Frequently Asked Questions for Help Center
   const faqs = [
     {
-      q: 'كيف يعمل حلاّل المسائل بالـ OCR في منصة «حتّان»؟',
+      q: 'كيف يعمل حلاّل المسائل بالـ OCR في منصة «هتاف العاصمي»؟',
       a: 'يمكنك التقاط صورة أو رفع ملف لمسألة من كتابك المدرسي أو ورقة الواجب، وسيقوم محرك الذكاء الاصطناعي بتحليل النص والمعادلات الرياضية أو العلمية بدقة، وتقديم شرح تدريجي خطوة بخطوة مع القوانين المستخدمة.'
     },
     {
@@ -236,7 +236,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 </span>
               </div>
               <p className="text-xs sm:text-sm text-blue-200/80 font-medium">
-                {profile.grade} • منصة «حتّان» التعليمية الذكية
+                {profile.grade} • منصة «هتاف العاصمي» التعليمية الذكية
               </p>
               <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300/80 pt-1">
                 <span className="flex items-center gap-1.5 bg-blue-950/60 text-cyan-300 px-2.5 py-1 rounded-lg border border-blue-800/40">
@@ -648,7 +648,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 مركز المساعدة والدعم الذكي
               </h3>
               <p className="text-xs text-blue-200/70 font-medium">
-                إجابات سريعة وإرشادات لاستخدام أدوات منصة «حتّان»
+                إجابات سريعة وإرشادات لاستخدام أدوات منصة «هتاف العاصمي»
               </p>
             </div>
           </div>

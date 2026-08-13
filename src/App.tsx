@@ -815,7 +815,7 @@ export default function App() {
       <footer className="bg-[#050a16] text-blue-300/70 text-xs py-8 border-t border-blue-900/40 mt-auto">
         <div className="max-w-7xl mx-auto px-4 text-center space-y-2">
           <div className="flex items-center justify-center gap-2 font-bold text-white">
-            <span className="bg-gradient-to-r from-cyan-400 to-blue-300 bg-clip-text text-transparent">منصة حتّان التعليمية الذكية</span>
+            <span className="bg-gradient-to-r from-cyan-400 to-blue-300 bg-clip-text text-transparent">منصة هتاف العاصمي التعليمية الذكية</span>
             <span className="text-slate-600">•</span>
             <span className="text-cyan-400">جميع الحقوق محفوظة © 2026</span>
           </div>

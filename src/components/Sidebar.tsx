@@ -101,7 +101,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div>
             <div className="flex items-center gap-1.5">
               <span className="text-lg font-black bg-gradient-to-r from-cyan-400 via-blue-200 to-purple-300 bg-clip-text text-transparent tracking-tight">
-                حتّان
+                هتاف العاصمي
               </span>
               <span className="bg-cyan-950 text-cyan-300 text-[10px] font-black px-1.5 py-0.5 rounded-full border border-cyan-800/60">
                 v3.0 AI
