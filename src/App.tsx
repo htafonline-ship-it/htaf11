@@ -45,7 +45,8 @@ import {
   isPlatformAdminRole
 } from './lib/routeGuardMiddleware';
 
-import { Navbar } from './components/Navbar';
+import { Sidebar } from './components/Sidebar';
+import { TopHeader } from './components/TopHeader';
 import { LoginModal } from './components/LoginModal';
 import { SupabaseConfigModal } from './components/SupabaseConfigModal';
 import { CreateSchoolView } from './components/CreateSchoolView';
@@ -74,6 +75,7 @@ export default function App() {
   const [isSupabaseConfigOpen, setIsSupabaseConfigOpen] = useState<boolean>(false);
   const [isCreateSchoolOpen, setIsCreateSchoolOpen] = useState<boolean>(false);
   const [isInviteStudentModalOpen, setIsInviteStudentModalOpen] = useState<boolean>(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
 
   const [userSchoolLink, setUserSchoolLink] = useState<SupabaseSchoolUserLink | null>(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState<boolean>(true);
@@ -557,7 +559,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-['Cairo',sans-serif] flex flex-col">
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-['Cairo',sans-serif] flex">
       {/* Security Toast Alert Popup */}
       {securityToastMessage && (
         <SecurityToast
@@ -566,8 +568,8 @@ export default function App() {
         />
       )}
 
-      {/* Navigation Header */}
-      <Navbar
+      {/* Right Sidebar (Desktop Persistent & Mobile Drawer) */}
+      <Sidebar
         currentRole={currentRole}
         currentSchool={currentSchool}
         schools={schools}
@@ -581,46 +583,67 @@ export default function App() {
         currentUser={currentUser}
         onOpenLoginModal={() => setIsLoginModalOpen(true)}
         onLogout={handleLogout}
+        isMobileOpen={isMobileSidebarOpen}
+        onCloseMobile={() => setIsMobileSidebarOpen(false)}
       />
 
-      {/* Login Modal */}
-      <LoginModal
-        isOpen={isLoginModalOpen}
-        onClose={() => setIsLoginModalOpen(false)}
-        onLoginSuccess={handleLoginSuccess}
-      />
-
-      {/* Create School View Modal */}
-      {isCreateSchoolOpen && (
-        <CreateSchoolView
+      {/* Main Content Area with Sticky Top Header */}
+      <div className="flex-1 flex flex-col min-w-0">
+        <TopHeader
+          currentRole={currentRole}
+          currentSchool={currentSchool}
+          schools={schools}
+          onSchoolChange={handleSchoolChangeGuard}
+          activeTab={activeTab}
+          setActiveTab={handleSetActiveTabGuard}
+          onOpenSolver={() => {
+            setSolverQuestion('');
+            handleSetActiveTabGuard('solver');
+          }}
           currentUser={currentUser}
-          user={currentUser}
-          onClose={() => setIsCreateSchoolOpen(false)}
-          onCancel={() => setIsCreateSchoolOpen(false)}
-          onSchoolCreated={(newSch) => {
-            loadRealSchools();
-            setIsCreateSchoolOpen(false);
-          }}
-          onSuccess={(newSch) => {
-            loadRealSchools();
-            setIsCreateSchoolOpen(false);
-          }}
+          onOpenLoginModal={() => setIsLoginModalOpen(true)}
+          onLogout={handleLogout}
+          onOpenMobileSidebar={() => setIsMobileSidebarOpen(true)}
         />
-      )}
 
-      {/* Invite Student Modal */}
-      {currentUser && currentSchool && (
-        <InviteStudentModal
-          isOpen={isInviteStudentModalOpen}
-          onClose={() => setIsInviteStudentModalOpen(false)}
-          schoolId={currentSchool.id}
-          schoolName={currentSchool.name}
-          teacherId={currentUser.id}
+        {/* Login Modal */}
+        <LoginModal
+          isOpen={isLoginModalOpen}
+          onClose={() => setIsLoginModalOpen(false)}
+          onLoginSuccess={handleLoginSuccess}
         />
-      )}
 
-      {/* Main Content Body */}
-      <main className="flex-1 pb-16">
+        {/* Create School View Modal */}
+        {isCreateSchoolOpen && (
+          <CreateSchoolView
+            currentUser={currentUser}
+            user={currentUser}
+            onClose={() => setIsCreateSchoolOpen(false)}
+            onCancel={() => setIsCreateSchoolOpen(false)}
+            onSchoolCreated={(newSch) => {
+              loadRealSchools();
+              setIsCreateSchoolOpen(false);
+            }}
+            onSuccess={(newSch) => {
+              loadRealSchools();
+              setIsCreateSchoolOpen(false);
+            }}
+          />
+        )}
+
+        {/* Invite Student Modal */}
+        {currentUser && currentSchool && (
+          <InviteStudentModal
+            isOpen={isInviteStudentModalOpen}
+            onClose={() => setIsInviteStudentModalOpen(false)}
+            schoolId={currentSchool.id}
+            schoolName={currentSchool.name}
+            teacherId={currentUser.id}
+          />
+        )}
+
+        {/* Main Content Body */}
+        <main className="flex-1 pb-16">
         {currentUser && !userSchoolLink && currentRole !== 'super_admin' && currentRole !== 'platform_admin' ? (
           <UnlinkedUserGate
             currentUser={currentUser}
@@ -796,6 +819,7 @@ export default function App() {
           </p>
         </div>
       </footer>
+    </div>
     </div>
   );
 }
