@@ -11,19 +11,22 @@ import {
   Loader2,
   GraduationCap,
   FileSpreadsheet,
-  Download
+  Download,
+  UserPlus
 } from 'lucide-react';
 
 interface TeacherDashboardProps {
   homeworks: HomeworkAssignment[];
   onAddHomework: (hw: HomeworkAssignment) => void;
   onAddQuiz: (quiz: QuizItem) => void;
+  onOpenInviteStudentModal?: () => void;
 }
 
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   homeworks,
   onAddHomework,
-  onAddQuiz
+  onAddQuiz,
+  onOpenInviteStudentModal
 }) => {
   const [showHomeworkModal, setShowHomeworkModal] = useState(false);
   const [showBatchHomeworkModal, setShowBatchHomeworkModal] = useState(false);
@@ -118,17 +121,27 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             <div className="flex items-center gap-2">
               <h2 className="text-2xl font-black">لوحة تحكم المعلم ومربي الصف</h2>
               <span className="bg-emerald-500/20 text-emerald-300 text-xs font-bold px-2.5 py-0.5 rounded-full border border-emerald-500/30">
-                قسم العلوم والرياضيات
+                إدارة الطلاب والواجبات
               </span>
             </div>
             <p className="text-slate-300 text-xs mt-1">
-              إسناد الواجبات، إنشاء الاختبارات بالذكاء الاصطناعي، ومتابعة سجلات درجات واستيعاب الطلاب.
+              إضافة ودعوة الطلاب، إسناد الواجبات، إنشاء الاختبارات بالذكاء الاصطناعي، ومتابعة الاستيعاب.
             </p>
           </div>
         </div>
 
         {/* Action buttons */}
         <div className="flex flex-wrap items-center gap-3 self-end md:self-auto">
+          {onOpenInviteStudentModal && (
+            <button
+              onClick={onOpenInviteStudentModal}
+              className="bg-emerald-500 text-slate-950 hover:bg-emerald-400 text-xs font-black px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2 transition"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>+ إضافة ودعوة طالب</span>
+            </button>
+          )}
+
           <button
             onClick={() => setShowBatchHomeworkModal(true)}
             className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold px-4 py-2.5 rounded-xl shadow flex items-center gap-2 transition"
@@ -150,7 +163,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2 transition"
           >
             <Sparkles className="w-4 h-4 fill-slate-950" />
-            <span>مولد الاختبارات بالذكاء الاصطناعي</span>
+            <span>اختبار بالذكاء الاصطناعي</span>
           </button>
         </div>
       </div>
@@ -175,18 +188,25 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             </div>
 
             <div className="space-y-3">
-              {homeworks.map((hw) => (
-                <div key={hw.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-900 text-sm">{hw.title}</span>
-                    <span className="text-xs text-emerald-700 font-bold bg-emerald-100 px-2.5 py-0.5 rounded">
-                      {hw.subject}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-600">{hw.description}</p>
-                  <div className="text-[10px] text-slate-400 font-bold">تاريخ التسليم: {hw.dueDate}</div>
+              {homeworks.length === 0 ? (
+                <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 space-y-2">
+                  <BookOpen className="w-8 h-8 text-slate-300 mx-auto" />
+                  <p className="text-xs text-slate-500 font-bold">لا توجد واجبات مسندة حتى الآن في Supabase.</p>
                 </div>
-              ))}
+              ) : (
+                homeworks.map((hw) => (
+                  <div key={hw.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-900 text-sm">{hw.title}</span>
+                      <span className="text-xs text-emerald-700 font-bold bg-emerald-100 px-2.5 py-0.5 rounded">
+                        {hw.subject}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600">{hw.description}</p>
+                    <div className="text-[10px] text-slate-400 font-bold">تاريخ التسليم: {hw.dueDate}</div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -194,10 +214,22 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         {/* Classes Roster */}
         <div className="lg:col-span-4 space-y-6">
           <div className="bg-white rounded-3xl p-6 shadow-md border border-slate-200 space-y-4">
-            <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
-              <Users className="w-5 h-5 text-emerald-600" />
-              فصولي وشعبي المدرسية
-            </h3>
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
+                <Users className="w-5 h-5 text-emerald-600" />
+                إدارة طلاب الفصول
+              </h3>
+
+              {onOpenInviteStudentModal && (
+                <button
+                  onClick={onOpenInviteStudentModal}
+                  className="text-xs font-black text-emerald-700 hover:text-emerald-900 bg-emerald-50 p-1.5 rounded-lg flex items-center gap-1 border border-emerald-200"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>+ دعوة طالب</span>
+                </button>
+              )}
+            </div>
 
             <div className="space-y-3">
               {[
@@ -217,6 +249,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           </div>
         </div>
       </div>
+
 
       {/* NEW HOMEWORK MODAL */}
       {showHomeworkModal && (

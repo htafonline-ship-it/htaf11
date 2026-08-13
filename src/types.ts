@@ -1,4 +1,4 @@
-export type UserRole = 'student' | 'teacher' | 'parent' | 'counselor' | 'vice_principal' | 'principal' | 'super_admin';
+export type UserRole = 'student' | 'teacher' | 'parent' | 'counselor' | 'vice_principal' | 'principal' | 'school_admin' | 'school_manager' | 'super_admin' | 'platform_admin';
 
 export interface AuthUser {
   id: string;

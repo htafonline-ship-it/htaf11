@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { SchoolTenant, SchoolCircular, CounselingReferral, ModerationAuditLogItem } from '../types';
 import { BulkExcelImportView } from './BulkExcelImportView';
 import { ReportPdfExportModal } from './ReportPdfExportModal';
+import { PrincipalDashboard } from './dashboards/PrincipalDashboard';
 import {
   School,
   FileText,
@@ -23,7 +24,8 @@ import {
   Trash2,
   Filter,
   FileSpreadsheet,
-  Printer
+  Printer,
+  BarChart3
 } from 'lucide-react';
 
 interface SchoolManagementViewProps {
@@ -32,6 +34,7 @@ interface SchoolManagementViewProps {
   auditLogs?: ModerationAuditLogItem[];
   onAddReferral: (referral: CounselingReferral) => void;
   onAddCircular: (circular: SchoolCircular) => void;
+  onOpenInviteStudentModal?: () => void;
 }
 
 export const SchoolManagementView: React.FC<SchoolManagementViewProps> = ({
@@ -39,9 +42,11 @@ export const SchoolManagementView: React.FC<SchoolManagementViewProps> = ({
   referrals,
   auditLogs = [],
   onAddReferral,
-  onAddCircular
+  onAddCircular,
+  onOpenInviteStudentModal
 }) => {
-  const [activeTab, setActiveTab] = useState<'circulars' | 'referrals' | 'audit' | 'bulk_excel'>('circulars');
+  const [activeTab, setActiveTab] = useState<'principal_dashboard' | 'circulars' | 'referrals' | 'audit' | 'bulk_excel'>('principal_dashboard');
+
   const [importedStudentsNotice, setImportedStudentsNotice] = useState<number | null>(null);
 
   // Restricted users state for moderation
@@ -177,6 +182,18 @@ export const SchoolManagementView: React.FC<SchoolManagementViewProps> = ({
       {/* Tabs */}
       <div className="flex border-b border-slate-200 overflow-x-auto">
         <button
+          onClick={() => setActiveTab('principal_dashboard')}
+          className={`px-5 py-3 text-xs font-extrabold border-b-2 transition flex items-center gap-2 whitespace-nowrap ${
+            activeTab === 'principal_dashboard'
+              ? 'border-emerald-600 text-emerald-700 bg-emerald-50/50'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <BarChart3 className="w-4 h-4 text-emerald-600" />
+          <span>إحصائيات وقواعد بيانات مدير المدرسة الحية</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('circulars')}
           className={`px-5 py-3 text-xs font-extrabold border-b-2 transition flex items-center gap-2 whitespace-nowrap ${
             activeTab === 'circulars'
@@ -224,6 +241,18 @@ export const SchoolManagementView: React.FC<SchoolManagementViewProps> = ({
           <span>سجل الرقابة والأمن الرقمي Audit Log ({auditLogs.length})</span>
         </button>
       </div>
+
+      {/* PRINCIPAL DASHBOARD TAB */}
+      {activeTab === 'principal_dashboard' && (
+        <PrincipalDashboard
+          currentSchool={currentSchool}
+          referrals={referrals}
+          auditLogs={auditLogs}
+          onAddReferral={onAddReferral}
+          onAddCircular={onAddCircular}
+          onOpenInviteStudentModal={onOpenInviteStudentModal}
+        />
+      )}
 
       {/* BULK EXCEL IMPORT TAB */}
       {activeTab === 'bulk_excel' && (
