@@ -21,16 +21,23 @@ import {
 } from 'lucide-react';
 
 interface CreateSchoolViewProps {
-  currentUser: AuthUser;
-  onSuccess: (school: DbSchool) => void;
-  onCancel: () => void;
+  currentUser?: AuthUser | null;
+  user?: AuthUser | null;
+  onSuccess?: (school: DbSchool) => void;
+  onSchoolCreated?: (school: DbSchool) => void;
+  onCancel?: () => void;
+  onClose?: () => void;
 }
 
 export const CreateSchoolView: React.FC<CreateSchoolViewProps> = ({
-  currentUser,
+  currentUser: propCurrentUser,
+  user: propUser,
   onSuccess,
-  onCancel
+  onSchoolCreated,
+  onCancel,
+  onClose
 }) => {
+  const activeUser = propCurrentUser || propUser;
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -42,13 +49,23 @@ export const CreateSchoolView: React.FC<CreateSchoolViewProps> = ({
   const [country, setCountry] = useState('المملكة العربية السعودية');
   const [region, setRegion] = useState('منطقة الرياض');
   const [city, setCity] = useState('الرياض');
-  const [principalName, setPrincipalName] = useState(currentUser.fullName || 'أحمد العاصمي');
+  const [principalName, setPrincipalName] = useState(activeUser?.fullName || 'أحمد العاصمي');
   const [phone, setPhone] = useState('0500000000');
-  const [email, setEmail] = useState(currentUser.email || 'admin@hataf.edu.sa');
+  const [email, setEmail] = useState(activeUser?.email || 'admin@hataf.edu.sa');
   const [licenseNumber, setLicenseNumber] = useState('LIC-2026-9901');
   const [academicYear, setAcademicYear] = useState('1447 - 1448 هـ (2026/2027م)');
   const [logoUrl, setLogoUrl] = useState('https://images.unsplash.com/photo-1546410531-bb4caa6b424d?w=150');
   const [slug, setSlug] = useState('hataf-school');
+
+  const handleCloseView = () => {
+    if (onCancel) onCancel();
+    if (onClose) onClose();
+  };
+
+  const handleCreatedView = (school: DbSchool) => {
+    if (onSuccess) onSuccess(school);
+    if (onSchoolCreated) onSchoolCreated(school);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,12 +95,12 @@ export const CreateSchoolView: React.FC<CreateSchoolViewProps> = ({
           logo_url: logoUrl,
           slug: formattedSlug,
         },
-        currentUser.id,
-        currentUser.email,
-        currentUser.fullName
+        activeUser?.id || 'admin-user',
+        activeUser?.email || email || 'admin@hataf.edu.sa',
+        activeUser?.fullName || principalName || 'مدير المدرسة'
       );
 
-      onSuccess(school);
+      handleCreatedView(school);
     } catch (err: any) {
       console.error('Error creating school:', err);
       setErrorMessage(err.message || 'حدث خطأ أثناء حفظ سجل المدرسة في Supabase.');
@@ -114,7 +131,7 @@ export const CreateSchoolView: React.FC<CreateSchoolViewProps> = ({
           </div>
 
           <button
-            onClick={onCancel}
+            onClick={handleCloseView}
             className="text-xs text-slate-500 hover:text-slate-800 font-bold px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 transition flex items-center gap-1.5"
           >
             <ArrowRight className="w-4 h-4" />
@@ -345,7 +362,7 @@ export const CreateSchoolView: React.FC<CreateSchoolViewProps> = ({
           <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
             <button
               type="button"
-              onClick={onCancel}
+              onClick={handleCloseView}
               className="text-xs text-slate-500 hover:text-slate-800 font-bold px-5 py-3 rounded-xl transition"
             >
               إلغاء

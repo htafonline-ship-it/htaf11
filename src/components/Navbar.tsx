@@ -174,7 +174,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     {currentUser.avatarUrl ? (
                       <img src={currentUser.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
                     ) : (
-                      currentUser.fullName[0] || 'ح'
+                      currentUser.fullName?.[0] || 'ح'
                     )}
                   </div>
                   <div className="text-right hidden sm:block max-w-[140px] truncate">

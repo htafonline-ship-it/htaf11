@@ -588,20 +588,20 @@ export default function App() {
         isOpen={isLoginModalOpen}
         onClose={() => setIsLoginModalOpen(false)}
         onLoginSuccess={handleLoginSuccess}
-        onOpenSupabaseConfig={() => setIsSupabaseConfigOpen(true)}
-      />
-
-      {/* Supabase Configuration Modal */}
-      <SupabaseConfigModal
-        isOpen={isSupabaseConfigOpen}
-        onClose={() => setIsSupabaseConfigOpen(false)}
       />
 
       {/* Create School View Modal */}
       {isCreateSchoolOpen && (
         <CreateSchoolView
+          currentUser={currentUser}
+          user={currentUser}
           onClose={() => setIsCreateSchoolOpen(false)}
+          onCancel={() => setIsCreateSchoolOpen(false)}
           onSchoolCreated={(newSch) => {
+            loadRealSchools();
+            setIsCreateSchoolOpen(false);
+          }}
+          onSuccess={(newSch) => {
             loadRealSchools();
             setIsCreateSchoolOpen(false);
           }}
@@ -623,14 +623,22 @@ export default function App() {
       <main className="flex-1 pb-16">
         {currentUser && !userSchoolLink && currentRole !== 'super_admin' && currentRole !== 'platform_admin' ? (
           <UnlinkedUserGate
+            currentUser={currentUser}
             user={currentUser}
             schools={schools}
+            onCreateSchoolClick={() => setIsCreateSchoolOpen(true)}
             onOpenCreateSchool={() => setIsCreateSchoolOpen(true)}
-            onLinkedSuccess={() => {
-              if (currentUser.id) {
-                syncUserAuthWithSupabase({ id: currentUser.id, email: currentUser.email, user_metadata: { full_name: currentUser.fullName } });
+            onSchoolJoinedSuccess={() => {
+              if (currentUser?.id) {
+                syncUserAuthWithSupabase({ id: currentUser.id, email: currentUser.email || '', user_metadata: { full_name: currentUser.fullName } });
               }
             }}
+            onLinkedSuccess={() => {
+              if (currentUser?.id) {
+                syncUserAuthWithSupabase({ id: currentUser.id, email: currentUser.email || '', user_metadata: { full_name: currentUser.fullName } });
+              }
+            }}
+            onLogout={handleLogout}
           />
         ) : !checkTabPermission(activeTab, currentRole, userSchoolLink).allowed ? (
           <AccessDeniedGate

@@ -84,9 +84,9 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({ isOpen
             </label>
             <div className="relative">
               <input
-                type="text"
+                type="password"
                 required
-                placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                placeholder="••••••••••••••••••••••••••••••••"
                 value={key}
                 onChange={(e) => setKey(e.target.value)}
                 className="w-full text-xs py-3 px-4 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50 font-mono text-slate-700"

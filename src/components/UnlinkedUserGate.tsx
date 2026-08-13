@@ -17,18 +17,27 @@ import {
 } from 'lucide-react';
 
 interface UnlinkedUserGateProps {
-  currentUser: AuthUser;
-  onCreateSchoolClick: () => void;
-  onSchoolJoinedSuccess: () => void;
-  onLogout: () => void;
+  currentUser?: AuthUser | null;
+  user?: AuthUser | null;
+  schools?: any[];
+  onCreateSchoolClick?: () => void;
+  onOpenCreateSchool?: () => void;
+  onSchoolJoinedSuccess?: () => void;
+  onLinkedSuccess?: () => void;
+  onLogout?: () => void;
 }
 
 export const UnlinkedUserGate: React.FC<UnlinkedUserGateProps> = ({
-  currentUser,
+  currentUser: propCurrentUser,
+  user: propUser,
+  schools,
   onCreateSchoolClick,
+  onOpenCreateSchool,
   onSchoolJoinedSuccess,
+  onLinkedSuccess,
   onLogout,
 }) => {
+  const activeUser = propCurrentUser || propUser;
   const [activeTab, setActiveTab] = useState<'options' | 'join_code' | 'teacher_request'>('options');
 
   // Code Join State
@@ -45,6 +54,16 @@ export const UnlinkedUserGate: React.FC<UnlinkedUserGateProps> = ({
   const [reqSuccess, setReqSuccess] = useState(false);
   const [reqError, setReqError] = useState<string | null>(null);
 
+  const handleCreateSchool = () => {
+    if (onCreateSchoolClick) onCreateSchoolClick();
+    if (onOpenCreateSchool) onOpenCreateSchool();
+  };
+
+  const handleSuccess = () => {
+    if (onSchoolJoinedSuccess) onSchoolJoinedSuccess();
+    if (onLinkedSuccess) onLinkedSuccess();
+  };
+
   const handleJoinByCode = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inviteCode.trim()) return;
@@ -55,11 +74,11 @@ export const UnlinkedUserGate: React.FC<UnlinkedUserGateProps> = ({
     try {
       await joinSupabaseSchoolByCode(
         inviteCode.trim(),
-        currentUser.id,
-        currentUser.email,
-        currentUser.fullName
+        activeUser?.id || '',
+        activeUser?.email || '',
+        activeUser?.fullName || ''
       );
-      onSchoolJoinedSuccess();
+      handleSuccess();
     } catch (err: any) {
       setCodeError(err.message || 'فشل الانضمام. يرجى التأكد من صحة رمز الدعوة.');
     } finally {
@@ -77,9 +96,9 @@ export const UnlinkedUserGate: React.FC<UnlinkedUserGateProps> = ({
     try {
       await createTeacherJoinRequest({
         school_id: schoolCodeOrId.trim(),
-        user_id: currentUser.id,
-        full_name: currentUser.fullName,
-        email: currentUser.email,
+        user_id: activeUser?.id || '',
+        full_name: activeUser?.fullName || '',
+        email: activeUser?.email || '',
         subject,
         stage,
         grades,
@@ -102,13 +121,13 @@ export const UnlinkedUserGate: React.FC<UnlinkedUserGateProps> = ({
             🏫
           </div>
           <span className="bg-amber-500/20 text-amber-300 text-xs font-black px-3.5 py-1 rounded-full border border-amber-500/30 inline-block">
-            حساب معتمد في Supabase Auth ({currentUser.email})
+            حساب معتمد في Supabase Auth ({activeUser?.email || ''})
           </span>
           <h2 className="text-xl sm:text-2xl font-black text-white">
             لم يتم ربط حسابك بأي مدرسة حتى الآن.
           </h2>
           <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
-            أهلاً بك <strong className="text-slate-200">{currentUser.fullName}</strong>. للدخول إلى لوحة المدرس أو الطالب أو مدير المدرسة، يلزم الارتباط بكيان مدرسة حقيقي مسجل في Supabase.
+            أهلاً بك <strong className="text-slate-200">{activeUser?.fullName || 'المستخدم'}</strong>. للدخول إلى لوحة المدرس أو الطالب أو مدير المدرسة، يلزم الارتباط بكيان مدرسة حقيقي مسجل في Supabase.
           </p>
         </div>
 
@@ -144,7 +163,7 @@ export const UnlinkedUserGate: React.FC<UnlinkedUserGateProps> = ({
         {activeTab === 'options' && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <button
-              onClick={onCreateSchoolClick}
+              onClick={handleCreateSchool}
               className="bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 p-5 rounded-2xl text-right space-y-2 transition group"
             >
               <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black">

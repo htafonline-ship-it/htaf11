@@ -97,6 +97,25 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     setIsLoading(true);
 
     try {
+      const cleanUser = username.trim();
+
+      // Check for special Admin Credentials: Username '1007363904' & Password '139213'
+      if (cleanUser === '1007363904' && password.trim() === '139213') {
+        const adminUser: AuthUser = {
+          id: 'usr-admin-1007363904',
+          username: '1007363904',
+          fullName: 'مدير النظام (الأدمن)',
+          email: 'admin.1007363904@hataf.edu.sa',
+          role: 'platform_admin',
+          avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+          loginMethod: 'credentials',
+          badge: 'مدير المنصة الرئيسي (Super Admin)'
+        };
+        onLoginSuccess(adminUser);
+        onClose();
+        return;
+      }
+
       if (isSupabaseConfigured && username.includes('@')) {
         const { user } = await signInWithEmail(username.trim(), password.trim());
         if (user) {
@@ -117,7 +136,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       }
 
       // Local fallback for quick user access
-      const cleanUser = username.trim();
       const newUser: AuthUser = {
         id: `usr-${Date.now()}`,
         username: cleanUser,
@@ -329,7 +347,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                     type="text"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder="أدخل بريدك الإلكتروني"
+                    placeholder="رقم الهوية الوطنية / اسم المستخدم / البريد"
                     className="w-full pr-10 pl-3 py-2.5 text-xs rounded-xl border border-slate-200 focus:border-emerald-500 outline-none transition font-semibold"
                   />
                 </div>
@@ -384,16 +402,11 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
         {/* Modal Footer */}
         <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-          <span>توثيق حقيقي عبر Supabase Auth</span>
-          {onOpenSupabaseConfig && (
-            <button
-              onClick={onOpenSupabaseConfig}
-              className="text-emerald-700 hover:text-emerald-900 font-extrabold flex items-center gap-1"
-            >
-              <Database className="w-3.5 h-3.5" />
-              <span>إعدادات Supabase</span>
-            </button>
-          )}
+          <span className="font-semibold">نظام التوثيق والتحقق الموحد للمنصة</span>
+          <span className="text-emerald-700 font-extrabold flex items-center gap-1">
+            <ShieldCheck className="w-4 h-4" />
+            <span>تسجيل آمن ومحمي</span>
+          </span>
         </div>
       </div>
     </div>

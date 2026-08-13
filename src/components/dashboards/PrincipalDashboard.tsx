@@ -505,11 +505,11 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
                   <tr key={t.id} className="hover:bg-slate-50/80 transition">
                     <td className="py-3.5 px-4 font-extrabold text-slate-900 flex items-center gap-2">
                       <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-800 font-black flex items-center justify-center text-xs">
-                        {t.fullName.charAt(0)}
+                        {(t.fullName || 'م').charAt(0)}
                       </div>
-                      <span>{t.fullName}</span>
+                      <span>{t.fullName || 'معلم'}</span>
                     </td>
-                    <td className="py-3.5 px-4 text-slate-600 font-medium dir-ltr text-right">{t.email}</td>
+                    <td className="py-3.5 px-4 text-slate-600 font-medium dir-ltr text-right">{t.email || '-'}</td>
                     <td className="py-3.5 px-4 font-bold text-slate-800">
                       <span className="bg-blue-50 text-blue-700 px-2.5 py-1 rounded-lg border border-blue-200">
                         {t.subject}
@@ -598,7 +598,7 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
                           {st.classroom_name || '3/1'}
                         </span>
                       </td>
-                      <td className="py-3.5 px-4 text-slate-500 font-medium dir-ltr text-right">{st.email}</td>
+                      <td className="py-3.5 px-4 text-slate-500 font-medium dir-ltr text-right">{st.email || '-'}</td>
                       <td className="py-3.5 px-4 text-center">
                         <span className="bg-emerald-100 text-emerald-800 font-extrabold px-2.5 py-0.5 rounded-full text-[10px]">
                           ✓ طالب مسجل
@@ -639,11 +639,11 @@ export const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-900 font-black flex items-center justify-center text-sm">
-                        {req.full_name.charAt(0)}
+                        {(req.full_name || 'م').charAt(0)}
                       </div>
                       <div>
-                        <h4 className="font-black text-slate-900 text-sm">{req.full_name}</h4>
-                        <p className="text-xs text-slate-500 font-medium dir-ltr">{req.email}</p>
+                        <h4 className="font-black text-slate-900 text-sm">{req.full_name || 'معلم'}</h4>
+                        <p className="text-xs text-slate-500 font-medium dir-ltr">{req.email || '-'}</p>
                       </div>
                     </div>
                     <span className="bg-amber-100 text-amber-800 text-[10px] font-black px-2.5 py-1 rounded-full border border-amber-200">
