@@ -40,7 +40,7 @@ export const SmartTeacherView: React.FC<SmartTeacherViewProps> = ({ centralBooks
     {
       id: 'msg-1',
       sender: 'teacher',
-      text: 'أهلاً بك يا بطل! أنا المعلم الذكي في منصة هتاف العاصمي. يسعدني أن أصحبك في رحلة استكشاف الدروس العلمية بالشرح التفاعلي والمجسمات ثلاثية الأبعاد (3D). عن أي درس ترغب في الحديث اليوم؟',
+      text: 'أهلاً بك يا بطل! أنا المعلم الذكي في منصة «حتّان» التعليمية. يسعدني أن أصحبك في رحلة استكشاف الدروس العلمية بالشرح التفاعلي والمجسمات ثلاثية الأبعاد (3D). عن أي درس ترغب في الحديث اليوم؟',
       timestamp: 'الآن',
       threeDModel: PRESET_3D_MODELS.heart,
       checkQuestion: {
@@ -231,7 +231,7 @@ export const SmartTeacherView: React.FC<SmartTeacherViewProps> = ({ centralBooks
                   >
                     <div className="flex items-center justify-between gap-2 mb-2">
                       <span className="font-extrabold text-xs">
-                        {isTeacher ? 'المعلم الذكي (هتاف العاصمي)' : 'أنت (الطالب)'}
+                        {isTeacher ? 'المعلم الذكي (منصة حتّان)' : 'أنت (الطالب)'}
                       </span>
                       <div className="flex items-center gap-2">
                         <span className={`text-[10px] ${isTeacher ? 'text-slate-400' : 'text-emerald-200'}`}>

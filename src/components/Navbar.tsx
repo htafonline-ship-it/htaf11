@@ -94,11 +94,11 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h1 className="text-xl font-black tracking-tight text-blue-600 flex items-center gap-1.5">
-                    هتاف العاصمي
+                  <h1 className="text-xl font-black tracking-tight text-cyan-400 flex items-center gap-1.5">
+                    حتّان
                   </h1>
-                  <span className="bg-blue-50 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-blue-200">
-                    منصة ذكية v2.5
+                  <span className="bg-cyan-950 text-cyan-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-cyan-800/50">
+                    منصة ذكية v3.0
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 font-medium">

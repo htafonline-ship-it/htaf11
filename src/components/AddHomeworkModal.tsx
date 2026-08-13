@@ -81,7 +81,7 @@ export const AddHomeworkModal: React.FC<AddHomeworkModalProps> = ({
       setIsGeneratingAI(false);
       const generatedTitle = `واجب ذكي: ${currentTopicName}`;
       setTitle(generatedTitle);
-      setDescription(`واجب تقييمي نشط تم إنشاؤه آلياً بواسطة هتاف العاصمي للذكاء الاصطناعي حول درس "${currentTopicName}".`);
+      setDescription(`واجب تقييمي نشط تم إنشاؤه آلياً بواسطة محرك «حتّان» للذكاء الاصطناعي حول درس "${currentTopicName}".`);
       setQuestions([
         `1. استخرج من درس (${currentTopicName}) أهم نقطتين تحليلية ووضحهما بالتفصيل.`,
         `2. قم بتقديم مثال تطبيقي عملي يجسد مفاهيم ${currentTopicName}.`,
@@ -131,7 +131,7 @@ export const AddHomeworkModal: React.FC<AddHomeworkModalProps> = ({
                 إضافة واجب دراسي في المحادثة
               </h3>
               <p className="text-xs text-slate-500">
-                يمكنك إنشاء واجب وتعيينه إما من كتب المقرر الرسمي أو من موضوع خارجي، يدوياً أو بذكاء هتاف الاصطناعي.
+                يمكنك إنشاء واجب وتعيينه إما من كتب المقرر الرسمي أو من موضوع خارجي، يدوياً أو بذكاء «حتّان» الاصطناعي.
               </p>
             </div>
           </div>

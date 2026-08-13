@@ -637,7 +637,7 @@ export const ThreeDLessonViewer: React.FC<ThreeDLessonViewerProps> = ({
               <div className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-black">
                 3D
               </div>
-              <span>تحكم تفاعلي مباشر • محاكي هتاف العاصمي</span>
+              <span>تحكم تفاعلي مباشر • محاكي «حتّان» ثلاثي الأبعاد</span>
             </div>
           </div>
 
