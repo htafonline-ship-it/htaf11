@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
-import { ProblemSolverResult } from '../types';
+import { ProblemSolverResult, ThreeDModelInfo } from '../types';
+import { ThreeDLessonViewer, PRESET_3D_MODELS } from './ThreeDLessonViewer';
 import {
   Sparkles,
   Camera,
@@ -16,7 +17,9 @@ import {
   Image as ImageIcon,
   Send,
   Loader2,
-  Volume2
+  Volume2,
+  Box,
+  Heart
 } from 'lucide-react';
 
 interface AISolverViewProps {
@@ -29,17 +32,24 @@ export const AISolverView: React.FC<AISolverViewProps> = ({
   initialImage = ''
 }) => {
   const [questionText, setQuestionText] = useState(initialQuestion);
-  const [subject, setSubject] = useState('الرياضيات');
+  const [subject, setSubject] = useState('العلوم');
   const [grade, setGrade] = useState('الصف الثالث المتوسط');
   const [selectedImage, setSelectedImage] = useState<string | null>(initialImage || null);
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<ProblemSolverResult | null>(null);
   const [userPracticeAnswers, setUserPracticeAnswers] = useState<Record<string, number>>({});
   const [showPracticeHints, setShowPracticeHints] = useState<Record<string, boolean>>({});
+  const [active3DModal, setActive3DModal] = useState<ThreeDModelInfo | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Sample Preset Questions for Instant Demo
   const presets = [
+    {
+      title: 'قلب الإنسان والأوعية الدموية (علوم 3D 🫀)',
+      text: 'اشرح لي تشريح قلب الإنسان ووظيفة الأبهر الشرياني والشريان الرئوي بدقة مع العرض ثلاثي الأبعاد 3D.',
+      subject: 'العلوم',
+      grade: 'الصف الثالث المتوسط'
+    },
     {
       title: 'معادلة تربيعية من كتاب الرياضيات ص 42',
       text: 'حل المعادلة التربيعية الآتية باكمال المربع: س² + 6س - 16 = 0',
@@ -51,12 +61,6 @@ export const AISolverView: React.FC<AISolverViewProps> = ({
       text: 'تتحرك سيارة بسرعة 15 م/ث ثم تزداد سرعتها لتصل إلى 35 م/ث خلال 4 ثوانٍ. احسب التسارع بوحدة م/ث².',
       subject: 'الفيزياء',
       grade: 'الصف الأول الثانوي'
-    },
-    {
-      title: 'وزن المعادلة الكيميائية (علوم ص 88)',
-      text: 'زن المعادلة الكيميائية التالية موضحاً المواد المتفاعلة والناتجة: H2 + O2 -> H2O',
-      subject: 'العلوم',
-      grade: 'الصف الثالث المتوسط'
     }
   ];
 
@@ -360,6 +364,38 @@ export const AISolverView: React.FC<AISolverViewProps> = ({
             </div>
           )}
 
+          {/* 3D Interactive Model Banner if available */}
+          {(result.threeDModel || result.subject === 'العلوم' || result.question.includes('قلب')) && (
+            <div className="mx-6 sm:mx-8 my-4 p-5 rounded-2xl bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white border border-blue-500/40 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-blue-600 text-cyan-300 flex items-center justify-center font-extrabold shrink-0 shadow-lg shadow-blue-500/20">
+                  <Box className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h5 className="font-extrabold text-sm text-white">
+                      {result.threeDModel ? result.threeDModel.title : 'استكشاف المجسم ثلاثي الأبعاد (3D) لهذا الدرس'}
+                    </h5>
+                    <span className="bg-cyan-500/20 text-cyan-300 text-[10px] font-bold px-2 py-0.5 rounded border border-cyan-500/30">
+                      3D تفاعلي
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 mt-1">
+                    شرح مجسم تفاعلي يتيح لك تدوير الأعضاء والجزيئات واستكشاف أجزائها مع الشرح الصوتي للذكاء الاصطناعي.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setActive3DModal(result.threeDModel || PRESET_3D_MODELS.heart)}
+                className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-extrabold px-4 py-2.5 rounded-xl shadow-lg shadow-blue-600/20 flex items-center gap-2 shrink-0 transition"
+              >
+                <Heart className="w-4 h-4 text-rose-300 fill-rose-300/30 animate-pulse" />
+                <span>فتح المجسم 3D</span>
+              </button>
+            </div>
+          )}
+
           <div className="p-6 sm:p-8 space-y-8">
             {/* Step-by-step resolution */}
             <div className="space-y-4">
@@ -501,6 +537,15 @@ export const AISolverView: React.FC<AISolverViewProps> = ({
             )}
           </div>
         </div>
+      )}
+
+      {/* 3D Lesson Viewer Modal */}
+      {active3DModal && (
+        <ThreeDLessonViewer
+          modelInfo={active3DModal}
+          onClose={() => setActive3DModal(null)}
+          isModal={true}
+        />
       )}
     </div>
   );

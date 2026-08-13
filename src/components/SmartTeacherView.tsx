@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { TeacherChatMessage, CurriculumBook, HomeworkCitation } from '../types';
+import { TeacherChatMessage, CurriculumBook, HomeworkCitation, ThreeDModelInfo } from '../types';
 import { AddHomeworkModal } from './AddHomeworkModal';
+import { ThreeDLessonViewer, PRESET_3D_MODELS } from './ThreeDLessonViewer';
 import {
   Bot,
   Send,
@@ -15,7 +16,11 @@ import {
   Lightbulb,
   GraduationCap,
   PlusCircle,
-  FileText
+  FileText,
+  Box,
+  Eye,
+  Layers,
+  Heart
 } from 'lucide-react';
 
 interface SmartTeacherViewProps {
@@ -23,30 +28,32 @@ interface SmartTeacherViewProps {
 }
 
 export const SmartTeacherView: React.FC<SmartTeacherViewProps> = ({ centralBooks }) => {
-  const [subject, setSubject] = useState('الرياضيات');
+  const [subject, setSubject] = useState('العلوم');
   const [grade, setGrade] = useState('الصف الثالث المتوسط');
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [userAnswers, setUserAnswers] = useState<Record<string, number>>({});
   const [showHomeworkModal, setShowHomeworkModal] = useState(false);
+  const [active3DModal, setActive3DModal] = useState<ThreeDModelInfo | null>(null);
 
   const [messages, setMessages] = useState<TeacherChatMessage[]>([
     {
       id: 'msg-1',
       sender: 'teacher',
-      text: 'أهلاً بك يا بطل! أنا المعلم الذكي في منصة هتاف العاصمي. أنا هنا لأبسط لك أي درس أو مفهوم صعّب عليك في المنهج. عن أي درس ترغب في الحديث اليوم؟',
+      text: 'أهلاً بك يا بطل! أنا المعلم الذكي في منصة هتاف العاصمي. يسعدني أن أصحبك في رحلة استكشاف الدروس العلمية بالشرح التفاعلي والمجسمات ثلاثية الأبعاد (3D). عن أي درس ترغب في الحديث اليوم؟',
       timestamp: 'الآن',
+      threeDModel: PRESET_3D_MODELS.heart,
       checkQuestion: {
         id: 'cq-start',
-        question: 'اختبر استيعابك المبدئي: أي الأعداد التالية يعتبر عدداً أولياً؟',
-        options: ['4', '7', '9', '15'],
+        question: 'اختبر استيعابك المبدئي للقلب: ما هو الشريان الأكبر في الجسم الذي يوزع الدم المؤكسج من البطين الأيسر؟',
+        options: ['الشريان الرئوي', 'الأبهر (Aorta)', 'الوريد الأجوف العلوي', 'الوريد الرئوي'],
         correctAnswer: 1,
-        explanation: 'العدد 7 لا يقبل القسمة إلا على نفسه وعلى 1 فقط، فهو عدد أولي.'
+        explanation: 'الشريان الأبهر (Aorta) هو أكبر شريان وينطلق من البطين الأيسر ليغذي كافة أجهزة وجسم الإنسان بالدم النقي.'
       },
       suggestedPrompts: [
-        'اشرح لي تحليل المعادلة التربيعية',
-        'ما الفرق بين الرابطة الأيونية والتساهمية؟',
-        'كيف أحسب التسارع في الفيزياء؟'
+        'اشرح لي تشريح ووظيفة قلب الإنسان 3D 🫀',
+        'ما الفرق بين الشريان والوريد في الدورة الدموية؟',
+        'اعرض لي التركيب الجزيئي للماء H₂O 3D 🧪'
       ]
     }
   ]);
@@ -91,7 +98,8 @@ export const SmartTeacherView: React.FC<SmartTeacherViewProps> = ({ centralBooks
           text: resData.data.text,
           timestamp: new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
           checkQuestion: resData.data.checkQuestion,
-          suggestedPrompts: resData.data.suggestedPrompts
+          suggestedPrompts: resData.data.suggestedPrompts,
+          threeDModel: resData.data.threeDModel
         };
         setMessages((prev) => [...prev, teacherMsg]);
       }
@@ -146,15 +154,31 @@ export const SmartTeacherView: React.FC<SmartTeacherViewProps> = ({ centralBooks
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="flex items-center gap-2 self-end md:self-auto">
+        {/* Filters & 3D Presets */}
+        <div className="flex flex-wrap items-center gap-2 self-end md:self-auto">
+          <button
+            onClick={() => setActive3DModal(PRESET_3D_MODELS.heart)}
+            className="bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-xs font-bold px-3 py-2 rounded-xl transition flex items-center gap-1.5"
+          >
+            <Heart className="w-4 h-4 text-rose-400 fill-rose-400/20 animate-pulse" />
+            <span>قلب الإنسان 3D</span>
+          </button>
+
+          <button
+            onClick={() => setActive3DModal(PRESET_3D_MODELS.molecule)}
+            className="bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/40 text-xs font-bold px-3 py-2 rounded-xl transition flex items-center gap-1.5"
+          >
+            <Box className="w-4 h-4 text-cyan-400" />
+            <span>جزيء H₂O 3D</span>
+          </button>
+
           <select
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
             className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-xl px-3 py-2 font-bold focus:ring-2 focus:ring-emerald-500"
           >
-            <option value="الرياضيات">مادة الرياضيات</option>
             <option value="العلوم">مادة العلوم</option>
+            <option value="الرياضيات">مادة الرياضيات</option>
             <option value="الفيزياء">مادة الفيزياء</option>
             <option value="الكيمياء">مادة الكيمياء</option>
             <option value="اللغة العربية">اللغة العربية</option>
@@ -227,6 +251,41 @@ export const SmartTeacherView: React.FC<SmartTeacherViewProps> = ({ centralBooks
 
                     <p className="whitespace-pre-line">{msg.text}</p>
                   </div>
+
+                  {/* Attached 3D Interactive Model Banner */}
+                  {isTeacher && msg.threeDModel && (
+                    <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white p-4 rounded-2xl border border-blue-500/40 shadow-xl space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-xl bg-blue-600 text-cyan-300 flex items-center justify-center font-black">
+                            <Box className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-bold text-cyan-300 uppercase tracking-wider block">
+                              شرح تفاعلي مجسم (3D Model)
+                            </span>
+                            <h4 className="text-xs font-black text-white">{msg.threeDModel.title}</h4>
+                          </div>
+                        </div>
+                        <span className="text-[10px] font-bold bg-blue-500/20 text-cyan-200 border border-cyan-400/30 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                          <Sparkles className="w-3 h-3 text-cyan-300" />
+                          تفاعلي
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-slate-300 line-clamp-2 leading-relaxed">
+                        {msg.threeDModel.summary}
+                      </p>
+
+                      <button
+                        onClick={() => setActive3DModal(msg.threeDModel!)}
+                        className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-xs py-2.5 rounded-xl shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2 transition"
+                      >
+                        <Eye className="w-4 h-4" />
+                        <span>فتح واستكشاف المجسم ثلاثي الأبعاد (3D)</span>
+                      </button>
+                    </div>
+                  )}
 
                   {/* Concept Check Question Card */}
                   {isTeacher && msg.checkQuestion && (
@@ -393,6 +452,15 @@ export const SmartTeacherView: React.FC<SmartTeacherViewProps> = ({ centralBooks
         onSubmitHomework={handleHomeworkSubmit}
         centralBooks={centralBooks}
       />
+
+      {/* 3D Lesson Viewer Modal */}
+      {active3DModal && (
+        <ThreeDLessonViewer
+          modelInfo={active3DModal}
+          onClose={() => setActive3DModal(null)}
+          isModal={true}
+        />
+      )}
     </div>
   );
 };

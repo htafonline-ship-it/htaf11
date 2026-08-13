@@ -1,5 +1,5 @@
 import React from 'react';
-import { UserRole, SchoolTenant } from '../types';
+import { UserRole, SchoolTenant, AuthUser } from '../types';
 import {
   Sparkles,
   GraduationCap,
@@ -14,7 +14,11 @@ import {
   Bot,
   MessageSquare,
   Crown,
-  KeyRound
+  KeyRound,
+  LogIn,
+  LogOut,
+  User,
+  ShieldCheck
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -26,6 +30,9 @@ interface NavbarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
   onOpenSolver: () => void;
+  currentUser: AuthUser | null;
+  onOpenLoginModal: () => void;
+  onLogout: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -36,7 +43,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSchoolChange,
   activeTab,
   setActiveTab,
-  onOpenSolver
+  onOpenSolver,
+  currentUser,
+  onOpenLoginModal,
+  onLogout
 }) => {
   const roleLabels: Record<UserRole, { label: string; icon: string; badge: string }> = {
     student: { label: 'طالب', icon: '🎓', badge: 'الصف 3 متوسط' },
@@ -128,33 +138,103 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </div>
 
-          {/* Action Button: Flagship AI Solver */}
-          <div className="flex items-center gap-3">
+          {/* Action Buttons & Auth */}
+          <div className="flex items-center gap-2 sm:gap-3">
             <button
               onClick={onOpenSolver}
-              className="relative group bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 text-white font-extrabold px-4 py-2 rounded-xl text-xs sm:text-sm shadow-md shadow-blue-500/20 flex items-center gap-2 transition transform active:scale-95"
+              className="relative group bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 text-white font-extrabold px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm shadow-md shadow-blue-500/20 flex items-center gap-2 transition transform active:scale-95"
             >
               <Sparkles className="w-4 h-4 fill-white animate-pulse" />
-              <span>حلال المسائل الذكي (AI Solver)</span>
+              <span className="hidden md:inline">حلال المسائل الذكي</span>
+              <span className="md:hidden">AI Solver</span>
               <span className="bg-orange-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded shadow-sm">
                 OCR
               </span>
             </button>
 
+            {/* Login Status & Profile / Login Button */}
+            {currentUser ? (
+              <div className="relative group">
+                <button className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white text-xs px-3 py-2 rounded-xl shadow-sm border border-slate-800 transition">
+                  <div className="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center font-bold text-white text-[11px] overflow-hidden border border-white/20 shrink-0">
+                    {currentUser.avatarUrl ? (
+                      <img src={currentUser.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                    ) : (
+                      currentUser.fullName[0]
+                    )}
+                  </div>
+                  <div className="text-right hidden sm:block max-w-[130px] truncate">
+                    <div className="font-bold truncate text-[11px]">{currentUser.fullName}</div>
+                    <div className="text-[9px] text-emerald-400 font-semibold flex items-center gap-1">
+                      {currentUser.loginMethod === 'google' ? (
+                        <span>Google OAuth</span>
+                      ) : (
+                        <span>هوية: {currentUser.username}</span>
+                      )}
+                    </div>
+                  </div>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 ms-0.5" />
+                </button>
+
+                {/* Logged In Dropdown Menu */}
+                <div className="absolute left-0 top-full mt-1 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl py-2 hidden group-hover:block z-50">
+                  <div className="px-3 py-2 border-b border-slate-100 bg-slate-50">
+                    <p className="text-xs font-black text-slate-800">{currentUser.fullName}</p>
+                    <p className="text-[10px] text-slate-500 font-medium">{currentUser.email || currentUser.username}</p>
+                    <div className="mt-1.5 flex items-center gap-1.5">
+                      <span className="bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-0.5 rounded">
+                        {currentUser.badge || roleLabels[currentUser.role].label}
+                      </span>
+                      <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded">
+                        {currentUser.loginMethod === 'google' ? 'قوقل' : 'يوزر وباسورد'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="px-2 py-1 text-[10px] text-slate-400 font-bold uppercase">
+                    خيارات الحساب
+                  </div>
+
+                  <button
+                    onClick={onOpenLoginModal}
+                    className="w-full text-right px-3 py-2 text-xs flex items-center gap-2 hover:bg-blue-50 text-blue-700 font-bold transition"
+                  >
+                    <KeyRound className="w-4 h-4 text-blue-600" />
+                    <span>تبديل الحساب / الدخول برقم آخر</span>
+                  </button>
+
+                  <button
+                    onClick={onLogout}
+                    className="w-full text-right px-3 py-2 text-xs flex items-center gap-2 hover:bg-red-50 text-red-600 font-bold transition border-t border-slate-100 mt-1"
+                  >
+                    <LogOut className="w-4 h-4 text-red-500" />
+                    <span>تسجيل الخروج</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={onOpenLoginModal}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl shadow-sm flex items-center gap-2 transition"
+              >
+                <LogIn className="w-4 h-4" />
+                <span>تسجيل الدخول</span>
+              </button>
+            )}
+
             {/* Role Switcher */}
             <div className="relative group">
-              <button className="flex items-center gap-2 bg-slate-50 hover:bg-slate-100 text-slate-800 text-xs px-3 py-2 rounded-xl border border-slate-200 transition">
+              <button className="flex items-center gap-1.5 bg-slate-50 hover:bg-slate-100 text-slate-800 text-xs px-2.5 py-2 rounded-xl border border-slate-200 transition">
                 <span className="text-base">{roleLabels[currentRole].icon}</span>
-                <div className="text-right hidden sm:block">
-                  <div className="font-bold">{roleLabels[currentRole].label}</div>
-                  <div className="text-[10px] text-blue-600 font-semibold">{roleLabels[currentRole].badge}</div>
+                <div className="text-right hidden xl:block">
+                  <div className="font-bold text-[11px]">{roleLabels[currentRole].label}</div>
                 </div>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-400 ms-1" />
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400 ms-0.5" />
               </button>
 
               <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-2xl shadow-xl py-2 hidden group-hover:block z-50">
                 <div className="px-3 py-1.5 text-[10px] text-slate-400 font-bold uppercase border-b border-slate-100">
-                  اختر دورك التجريبي (Role View)
+                  اختر العرض التجريبي (Role View)
                 </div>
                 {(Object.keys(roleLabels) as UserRole[]).map((role) => (
                   <button

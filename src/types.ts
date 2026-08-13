@@ -1,5 +1,19 @@
 export type UserRole = 'student' | 'teacher' | 'parent' | 'counselor' | 'vice_principal' | 'principal' | 'super_admin';
 
+export interface AuthUser {
+  id: string;
+  username: string; // e.g. national ID '1007363904' or email
+  fullName: string;
+  email?: string;
+  role: UserRole;
+  avatarUrl?: string;
+  loginMethod: 'google' | 'credentials';
+  schoolId?: string;
+  schoolName?: string;
+  nationalId?: string;
+  badge?: string;
+}
+
 export type EducationalStage = 'primary' | 'middle' | 'secondary';
 
 export interface SchoolTenant {
@@ -70,6 +84,25 @@ export interface SolverStep {
   mathFormula?: string;
 }
 
+export interface ThreeDPart {
+  id: string;
+  name: string;
+  description: string;
+  function: string;
+  position: [number, number, number];
+  color?: string;
+}
+
+export interface ThreeDModelInfo {
+  id: string;
+  title: string;
+  category: 'biology' | 'chemistry' | 'physics' | 'geography' | 'math';
+  summary: string;
+  parts: ThreeDPart[];
+  hasHeartbeatAnimation?: boolean;
+  modelType: 'heart' | 'cell' | 'molecule' | 'motor' | 'dna' | 'earth';
+}
+
 export interface ProblemSolverResult {
   question: string;
   subject: string;
@@ -79,6 +112,7 @@ export interface ProblemSolverResult {
   keyConcept: string;
   textbookCitation?: TextbookCitation;
   practiceQuestions: PracticeQuestion[];
+  threeDModel?: ThreeDModelInfo;
 }
 
 export interface CheckQuestion {
@@ -87,6 +121,40 @@ export interface CheckQuestion {
   options: string[];
   correctAnswer: number;
   explanation: string;
+}
+
+export interface PageExercise {
+  exerciseNumber: string;
+  question: string;
+  solution: string;
+  keyFormula?: string;
+}
+
+export interface PageQuizQuestion {
+  id: string;
+  question: string;
+  options: string[];
+  correctAnswer: number;
+  explanation: string;
+}
+
+export interface BookPageAnalysisResult {
+  bookTitle: string;
+  subject: string;
+  grade: string;
+  pageNumber: number;
+  unitName: string;
+  lessonTitle: string;
+  pageHeading: string;
+  pageTextContent: string;
+  pageSummary: string;
+  keyConceptsAndLaws: string[];
+  solvedExercises: PageExercise[];
+  practiceQuiz: {
+    quizTitle: string;
+    questions: PageQuizQuestion[];
+  };
+  threeDModel?: ThreeDModelInfo;
 }
 
 export interface HomeworkCitation {
@@ -113,6 +181,7 @@ export interface TeacherChatMessage {
   checkQuestion?: CheckQuestion;
   suggestedPrompts?: string[];
   homeworkCitation?: HomeworkCitation;
+  threeDModel?: ThreeDModelInfo;
 }
 
 export interface CurriculumLesson {

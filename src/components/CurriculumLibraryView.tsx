@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { CurriculumBook, EducationalStage, CurriculumSyncStatus } from '../types';
 import { CURRICULUM_BOOKS, INITIAL_CURRICULUM_SYNC_STATUS } from '../data/mockData';
+import { ReportPdfExportModal } from './ReportPdfExportModal';
+import { InteractiveBookPageReader } from './InteractiveBookPageReader';
 import {
   BookOpen,
   Search,
@@ -21,7 +23,11 @@ import {
   Filter,
   XCircle,
   Tag,
-  Compass
+  Compass,
+  Printer,
+  Eye,
+  Target,
+  HelpCircle
 } from 'lucide-react';
 
 interface CurriculumLibraryViewProps {
@@ -45,6 +51,16 @@ export const CurriculumLibraryView: React.FC<CurriculumLibraryViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [activeBook, setActiveBook] = useState<CurriculumBook | null>(activeBooks[0] || null);
 
+  // Interactive Book Page Reader state
+  const [readerBook, setReaderBook] = useState<CurriculumBook | null>(null);
+  const [readerPage, setReaderPage] = useState<number>(1);
+  const [readerTab, setReaderTab] = useState<'reader' | 'summary' | 'solve' | 'quiz'>('reader');
+
+  // PDF Export Modal State
+  const [showPdfModal, setShowPdfModal] = useState(false);
+  const [pdfExportType, setPdfExportType] = useState<'curriculum_single' | 'curriculum_stage'>('curriculum_single');
+  const [pdfSelectedBook, setPdfSelectedBook] = useState<CurriculumBook | undefined>(undefined);
+
   // Sync state
   const [syncStatus, setSyncStatus] = useState<CurriculumSyncStatus>(INITIAL_CURRICULUM_SYNC_STATUS);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -67,7 +83,7 @@ export const CurriculumLibraryView: React.FC<CurriculumLibraryViewProps> = ({
             title: 'استنزال ومطابقة كامل كتب الفصل الدراسي مع البوابات المعتمدة',
             source: 'بوابة عين الوطنية (ien.edu.sa)',
             status: 'تم التحديث',
-            details: 'تمت المزامنة بنجاح 100% مع كتب وخطط التوزيع الوزارية للعام 1447هـ - 2026م.'
+            details: 'تمت المزامنة بنجاح 100% مع كتب وخطط التوزيع الوزارية للعام 1448هـ - 2027م.'
           },
           ...prev.syncLogs
         ]
@@ -186,16 +202,28 @@ export const CurriculumLibraryView: React.FC<CurriculumLibraryViewProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                تحديث تلقائي مستمر • ربط بـ <strong>بوابة عين الوطنية</strong> و<strong>منصة مدرستي</strong> (طبعة 1447هـ - 2026م)
+                تحديث تلقائي مستمر • ربط بـ <strong>بوابة عين الوطنية</strong> و<strong>منصة مدرستي</strong> (طبعة 1448هـ - 2027م)
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end">
+          <div className="flex items-center gap-2.5 flex-wrap w-full md:w-auto justify-between md:justify-end">
             <div className="text-right text-[11px] text-slate-400">
               <div>آخر مزامنة ناجحة: <strong className="text-slate-200">{syncStatus.lastSyncTime}</strong></div>
               <div>المقررات المعتمدة: <strong className="text-emerald-400">{syncStatus.syncedBooksCount} كتاباً</strong></div>
             </div>
+
+            <button
+              onClick={() => {
+                setPdfExportType('curriculum_stage');
+                setShowPdfModal(true);
+              }}
+              className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold px-3.5 py-2.5 rounded-2xl border border-slate-700 flex items-center gap-1.5 transition shrink-0"
+              title="تصدير تقرير المناهج والمقررات المعتمدة كملف PDF"
+            >
+              <Printer className="w-4 h-4 text-emerald-400" />
+              <span>تصدير تقرير المناهج (PDF)</span>
+            </button>
 
             <button
               onClick={handleManualSync}
@@ -684,24 +712,77 @@ export const CurriculumLibraryView: React.FC<CurriculumLibraryViewProps> = ({
 
                 <div className="flex flex-col gap-2 shrink-0 w-full sm:w-auto">
                   <button
-                    onClick={() => onSelectTopicForTeacher(activeBook.subject, activeBook.grade)}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 transition"
+                    onClick={() => {
+                      setReaderBook(activeBook);
+                      setReaderPage(1);
+                      setReaderTab('reader');
+                    }}
+                    className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs px-4 py-3 rounded-xl shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 transition"
                   >
-                    <Sparkles className="w-4 h-4" />
-                    <span>شرح المادة مع المعلم الذكي</span>
+                    <BookOpen className="w-4 h-4 text-emerald-200" />
+                    <span>📖 فتح الكتاب وتصفح وحل أي صفحة</span>
                   </button>
 
-                  {activeBook.portalUrl && (
-                    <a
-                      href={activeBook.portalUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-4 py-2 rounded-xl flex items-center justify-center gap-1.5 transition border border-slate-200"
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <button
+                      onClick={() => {
+                        setReaderBook(activeBook);
+                        setReaderPage(1);
+                        setReaderTab('summary');
+                      }}
+                      className="bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 font-extrabold text-[10px] py-2 rounded-xl flex items-center justify-center gap-1 transition"
+                      title="تلخيص مفاهيم الصفحة بالذكاء الاصطناعي"
                     >
-                      <ExternalLink className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>رابط الفصل الرقمي ببوابة عين</span>
-                    </a>
-                  )}
+                      <FileText className="w-3 h-3 text-amber-600" />
+                      <span>تلخيص الصفحة</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setReaderBook(activeBook);
+                        setReaderPage(1);
+                        setReaderTab('solve');
+                      }}
+                      className="bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-200 font-extrabold text-[10px] py-2 rounded-xl flex items-center justify-center gap-1 transition"
+                      title="حل كافة تمارين الصفحة بالخطوات"
+                    >
+                      <Sparkles className="w-3 h-3 text-blue-600" />
+                      <span>حل الصفحة</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setReaderBook(activeBook);
+                        setReaderPage(1);
+                        setReaderTab('quiz');
+                      }}
+                      className="bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200 font-extrabold text-[10px] py-2 rounded-xl flex items-center justify-center gap-1 transition"
+                      title="اختبار تجريبي تقييمي لمدى استيعابك للصفحة"
+                    >
+                      <Target className="w-3 h-3 text-purple-600" />
+                      <span>اختبار فهمك</span>
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setPdfExportType('curriculum_single');
+                      setPdfSelectedBook(activeBook);
+                      setShowPdfModal(true);
+                    }}
+                    className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-md flex items-center justify-center gap-2 transition"
+                  >
+                    <Printer className="w-4 h-4 text-emerald-400" />
+                    <span>تصدير تقرير المقرر (PDF)</span>
+                  </button>
+
+                  <button
+                    onClick={() => onSelectTopicForTeacher(activeBook.subject, activeBook.grade)}
+                    className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs px-4 py-2 rounded-xl shadow-md flex items-center justify-center gap-2 transition"
+                  >
+                    <Sparkles className="w-4 h-4 text-emerald-400" />
+                    <span>شرح المادة مع المعلم الذكي</span>
+                  </button>
                 </div>
               </div>
 
@@ -718,12 +799,67 @@ export const CurriculumLibraryView: React.FC<CurriculumLibraryViewProps> = ({
                       key={ch.id}
                       className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3"
                     >
-                      <div className="flex items-center justify-between border-b border-slate-200/60 pb-2">
-                        <h5 className="font-extrabold text-slate-900 text-sm">{ch.title}</h5>
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-slate-200/60 pb-3 gap-2">
+                        <div>
+                          <h5 className="font-extrabold text-slate-900 text-sm">{ch.title}</h5>
+                          {ch.pageStart && (
+                            <span className="text-[11px] font-bold text-emerald-800">
+                              نطاق الصفحات: ({ch.pageStart} - {ch.pageEnd})
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Chapter Quick Page Actions */}
                         {ch.pageStart && (
-                          <span className="text-xs font-bold text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-lg">
-                            الصفحات ({ch.pageStart} - {ch.pageEnd})
-                          </span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <button
+                              onClick={() => {
+                                setReaderBook(activeBook);
+                                setReaderPage(ch.pageStart || 1);
+                                setReaderTab('reader');
+                              }}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-extrabold px-3 py-1.5 rounded-lg flex items-center gap-1 transition shadow-sm"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>استعراض ص {ch.pageStart}</span>
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setReaderBook(activeBook);
+                                setReaderPage(ch.pageStart || 1);
+                                setReaderTab('summary');
+                              }}
+                              className="bg-amber-100 hover:bg-amber-200 text-amber-900 text-[11px] font-extrabold px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition"
+                            >
+                              <FileText className="w-3.5 h-3.5 text-amber-700" />
+                              <span>تلخيص</span>
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setReaderBook(activeBook);
+                                setReaderPage(ch.pageStart || 1);
+                                setReaderTab('solve');
+                              }}
+                              className="bg-blue-100 hover:bg-blue-200 text-blue-900 text-[11px] font-extrabold px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition"
+                            >
+                              <Sparkles className="w-3.5 h-3.5 text-blue-700" />
+                              <span>حل التمارين</span>
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setReaderBook(activeBook);
+                                setReaderPage(ch.pageStart || 1);
+                                setReaderTab('quiz');
+                              }}
+                              className="bg-purple-100 hover:bg-purple-200 text-purple-900 text-[11px] font-extrabold px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition"
+                            >
+                              <Target className="w-3.5 h-3.5 text-purple-700" />
+                              <span>اختبار فهمك</span>
+                            </button>
+                          </div>
                         )}
                       </div>
 
@@ -769,6 +905,36 @@ export const CurriculumLibraryView: React.FC<CurriculumLibraryViewProps> = ({
           )}
         </div>
       </div>
+
+      {/* CURRICULUM REPORT PDF EXPORT MODAL */}
+      <ReportPdfExportModal
+        isOpen={showPdfModal}
+        onClose={() => setShowPdfModal(false)}
+        type={pdfExportType}
+        book={pdfSelectedBook || activeBook || undefined}
+        books={filteredBooks}
+        stageLabel={
+          selectedStage === 'primary'
+            ? 'المرحلة الابتدائية'
+            : selectedStage === 'middle'
+            ? 'المرحلة المتوسطة'
+            : selectedStage === 'secondary'
+            ? 'المرحلة الثانوية'
+            : 'كافة المراحل الدراسية'
+        }
+      />
+
+      {/* INTERACTIVE DIGITAL BOOK PAGE READER MODAL */}
+      {readerBook && (
+        <InteractiveBookPageReader
+          book={readerBook}
+          initialPageNumber={readerPage}
+          initialTab={readerTab}
+          onClose={() => setReaderBook(null)}
+          onOpenTeacherWithTopic={(subject, grade) => onSelectTopicForTeacher(subject, grade)}
+          onOpenSolverWithQuestion={(question, subject, grade) => onSelectTopicForSolver(question, subject, grade)}
+        />
+      )}
     </div>
   );
 };

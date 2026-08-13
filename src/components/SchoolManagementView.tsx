@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { SchoolTenant, SchoolCircular, CounselingReferral, ModerationAuditLogItem } from '../types';
 import { BulkExcelImportView } from './BulkExcelImportView';
+import { ReportPdfExportModal } from './ReportPdfExportModal';
 import {
   School,
   FileText,
@@ -21,7 +22,8 @@ import {
   Activity,
   Trash2,
   Filter,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Printer
 } from 'lucide-react';
 
 interface SchoolManagementViewProps {
@@ -54,6 +56,11 @@ export const SchoolManagementView: React.FC<SchoolManagementViewProps> = ({
   const [circContent, setCircContent] = useState('');
   const [circPriority, setCircPriority] = useState<'عاجل' | 'هام' | 'عادي'>('عادي');
   const [circCategory, setCircCategory] = useState<'إداري' | 'اختبارات' | 'نشاط مالي/مدرسي' | 'إرشاد طلابي'>('إداري');
+
+  // PDF Export Modal State
+  const [showPdfModal, setShowPdfModal] = useState(false);
+  const [pdfExportType, setPdfExportType] = useState<'circular_single' | 'circular_all'>('circular_single');
+  const [selectedPdfCircular, setSelectedPdfCircular] = useState<SchoolCircular | undefined>(undefined);
 
   // Form states for new referral
   const [showReferralModal, setShowReferralModal] = useState(false);
@@ -229,20 +236,34 @@ export const SchoolManagementView: React.FC<SchoolManagementViewProps> = ({
       {/* CIRCULARS TAB */}
       {activeTab === 'circulars' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
               <Megaphone className="w-5 h-5 text-emerald-600" />
               التعاميم المدرسية الصادرة للطلاب وأولياء الأمور
             </h3>
+
+            {currentSchool.circulars.length > 0 && (
+              <button
+                onClick={() => {
+                  setPdfExportType('circular_all');
+                  setSelectedPdfCircular(undefined);
+                  setShowPdfModal(true);
+                }}
+                className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-2 shadow transition"
+              >
+                <Printer className="w-4 h-4 text-emerald-400" />
+                <span>تصدير تقرير التعاميم الشامل (PDF)</span>
+              </button>
+            )}
           </div>
 
           <div className="space-y-4">
             {currentSchool.circulars.map((circ) => (
               <div
                 key={circ.id}
-                className="bg-white rounded-2xl p-6 shadow-md border border-slate-200 space-y-3"
+                className="bg-white rounded-2xl p-6 shadow-md border border-slate-200 space-y-3 hover:border-emerald-300 transition"
               >
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-2">
                     <span
                       className={`text-[10px] font-black px-2.5 py-0.5 rounded-full ${
@@ -259,9 +280,24 @@ export const SchoolManagementView: React.FC<SchoolManagementViewProps> = ({
                     <span className="text-xs text-slate-400">• {circ.date}</span>
                   </div>
 
-                  <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-lg">
-                    الفئة: {circ.category}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-lg">
+                      الفئة: {circ.category}
+                    </span>
+
+                    <button
+                      onClick={() => {
+                        setPdfExportType('circular_single');
+                        setSelectedPdfCircular(circ);
+                        setShowPdfModal(true);
+                      }}
+                      className="bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-bold text-xs px-3 py-1 rounded-lg flex items-center gap-1.5 transition"
+                      title="تصدير هذا التعميم بتنسيق PDF رسمي"
+                    >
+                      <Printer className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>تصدير PDF</span>
+                    </button>
+                  </div>
                 </div>
 
                 <h4 className="font-extrabold text-slate-900 text-base">{circ.title}</h4>
@@ -546,6 +582,16 @@ export const SchoolManagementView: React.FC<SchoolManagementViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* REPORT PDF EXPORT MODAL */}
+      <ReportPdfExportModal
+        isOpen={showPdfModal}
+        onClose={() => setShowPdfModal(false)}
+        type={pdfExportType}
+        circular={selectedPdfCircular}
+        school={currentSchool}
+        circulars={currentSchool.circulars}
+      />
     </div>
   );
 };

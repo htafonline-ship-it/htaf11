@@ -45,7 +45,7 @@ export const CurriculumImportView: React.FC<CurriculumImportViewProps> = ({
   const [activeTab, setActiveTab] = useState<'manual' | 'excel' | 'registry'>('manual');
 
   // Manual Form State
-  const [academicYear, setAcademicYear] = useState('1447هـ - 2026م');
+  const [academicYear, setAcademicYear] = useState('1448هـ - 2027م');
   const [educationStage, setEducationStage] = useState<EducationalStage>('middle');
   const [grade, setGrade] = useState('الصف الثالث المتوسط');
   const [semester, setSemester] = useState<1 | 2 | 3>(1);

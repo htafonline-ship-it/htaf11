@@ -13,7 +13,8 @@ import {
   ModerationAuditLogItem,
   SchoolRegistrationCode,
   CurriculumBook,
-  HomeworkCitation
+  HomeworkCitation,
+  AuthUser
 } from './types';
 import {
   INITIAL_SCHOOLS,
@@ -30,6 +31,7 @@ import {
 } from './data/mockData';
 
 import { Navbar } from './components/Navbar';
+import { LoginModal } from './components/LoginModal';
 import { AISolverView } from './components/AISolverView';
 import { SmartTeacherView } from './components/SmartTeacherView';
 import { CurriculumLibraryView } from './components/CurriculumLibraryView';
@@ -43,10 +45,40 @@ import { TeacherDashboard } from './components/dashboards/TeacherDashboard';
 import { CounselorDashboard } from './components/dashboards/CounselorDashboard';
 
 export default function App() {
-  const [currentRole, setCurrentRole] = useState<UserRole>('student');
+  // Authentication State with Admin 1007363904 pre-authenticated
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>({
+    id: 'usr-admin-1007363904',
+    username: '1007363904',
+    fullName: 'أحمد العاصمي (الأدمن العام الموحد)',
+    email: 'admin.asim@edu.sa',
+    role: 'super_admin',
+    avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+    loginMethod: 'credentials',
+    nationalId: '1007363904',
+    badge: 'الأدمن العام الموحد'
+  });
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
+
+  const [currentRole, setCurrentRole] = useState<UserRole>('super_admin');
   const [schools, setSchools] = useState<SchoolTenant[]>(INITIAL_SCHOOLS);
   const [currentSchool, setCurrentSchool] = useState<SchoolTenant>(INITIAL_SCHOOLS[0]);
-  const [activeTab, setActiveTab] = useState<string>('dashboard');
+  const [activeTab, setActiveTab] = useState<string>('super_admin');
+
+  const handleLoginSuccess = (user: AuthUser) => {
+    setCurrentUser(user);
+    setCurrentRole(user.role);
+    if (user.role === 'super_admin') {
+      setActiveTab('super_admin');
+    } else {
+      setActiveTab('dashboard');
+    }
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    setCurrentRole('student');
+    setActiveTab('dashboard');
+  };
 
   // App Data States
   const [studentProfile, setStudentProfile] = useState<StudentProfile>(INITIAL_STUDENT_PROFILE);
@@ -296,6 +328,16 @@ export default function App() {
           setSolverQuestion('');
           setActiveTab('solver');
         }}
+        currentUser={currentUser}
+        onOpenLoginModal={() => setIsLoginModalOpen(true)}
+        onLogout={handleLogout}
+      />
+
+      {/* Login Modal */}
+      <LoginModal
+        isOpen={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+        onLoginSuccess={handleLoginSuccess}
       />
 
       {/* Main Content Body */}
