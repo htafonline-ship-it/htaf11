@@ -170,27 +170,58 @@ export default function App() {
         };
         setCurrentUser(authUsr);
 
+        // Synchronize student profile with real authenticated user
+        setStudentProfile(prev => ({
+          ...prev,
+          name: link.full_name || name,
+          avatarUrl: sessionUser.user_metadata?.avatar_url,
+          avatar: sessionUser.user_metadata?.avatar_url ? undefined : '🧑‍🎓',
+        }));
+
         // Initial default tab by role
-        if (dbRole === 'super_admin' || dbRole === 'platform_admin') {
+        if (dbRole === 'super_admin' || dbRole === 'platform_admin' || email === 'htaf.online@gmail.com') {
+          setCurrentRole('platform_admin');
           setActiveTab('platform-admin');
         } else if (dbRole === 'principal' || dbRole === 'school_admin' || dbRole === 'vice_principal') {
           setActiveTab('school-mgmt');
+        } else if (dbRole === 'teacher') {
+          setActiveTab('teacher-portal');
+        } else if (dbRole === 'counselor') {
+          setActiveTab('counselor-portal');
+        } else if (dbRole === 'parent') {
+          setActiveTab('parent-portal');
         } else {
           setActiveTab('dashboard');
         }
       } else {
-        // Logged in via Google but not linked to any school in school_users table
+        // Check if admin email even without explicit school_users link
+        const isPlatformAdmin = email === 'htaf.online@gmail.com' || email.startsWith('admin.') || sessionUser.id?.startsWith('usr-admin');
+        const assignedRole: UserRole = isPlatformAdmin ? 'platform_admin' : 'student';
+
         const authUsr: AuthUser = {
           id: sessionUser.id,
           username: email.split('@')[0],
           fullName: name,
           email,
-          role: 'student',
+          role: assignedRole,
           avatarUrl: sessionUser.user_metadata?.avatar_url,
-          loginMethod: 'google'
+          loginMethod: 'google',
+          badge: isPlatformAdmin ? 'مدير المنصة الرئيسي (Super Admin)' : undefined
         };
         setCurrentUser(authUsr);
-        setCurrentRole('student');
+        setCurrentRole(assignedRole);
+
+        if (isPlatformAdmin) {
+          setActiveTab('platform-admin');
+        }
+
+        // Synchronize student profile with authenticated Google user
+        setStudentProfile(prev => ({
+          ...prev,
+          name: name,
+          avatarUrl: sessionUser.user_metadata?.avatar_url,
+          avatar: sessionUser.user_metadata?.avatar_url ? undefined : (isPlatformAdmin ? '👑' : '🧑‍🎓')
+        }));
       }
     } catch (err) {
       console.error('Error syncing auth session:', err);
@@ -201,6 +232,19 @@ export default function App() {
 
   useEffect(() => {
     loadRealSchools();
+
+    // Check if there is saved customized student profile locally
+    try {
+      const saved = localStorage.getItem('htaf_student_profile');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.name && parsed.name !== 'سارة عبد الله العاصمي') {
+          setStudentProfile(prev => ({ ...prev, ...parsed }));
+        }
+      }
+    } catch (e) {
+      console.warn('Could not read saved profile:', e);
+    }
 
     if (!supabase) {
       setIsLoadingAuth(false);
@@ -232,11 +276,34 @@ export default function App() {
   }, []);
 
   const handleLoginSuccess = (user: AuthUser) => {
-    if (user.id) {
-      syncUserAuthWithSupabase({ id: user.id, email: user.email, user_metadata: { full_name: user.fullName, avatar_url: user.avatarUrl } });
+    setCurrentUser(user);
+    setCurrentRole(user.role);
+
+    // Direct immediate routing according to user role without any extra clicks
+    if (user.role === 'platform_admin' || user.role === 'super_admin') {
+      setActiveTab('platform-admin');
+    } else if (user.role === 'school_admin' || user.role === 'principal' || user.role === 'vice_principal') {
+      setActiveTab('school-mgmt');
+    } else if (user.role === 'teacher') {
+      setActiveTab('teacher-portal');
+    } else if (user.role === 'counselor') {
+      setActiveTab('counselor-portal');
+    } else if (user.role === 'parent') {
+      setActiveTab('parent-portal');
     } else {
-      setCurrentUser(user);
-      setCurrentRole(user.role);
+      setActiveTab('dashboard');
+    }
+
+    const realName = user.fullName || user.username || user.email?.split('@')[0] || 'طالب مسجل';
+    setStudentProfile(prev => ({
+      ...prev,
+      name: realName,
+      avatarUrl: user.avatarUrl,
+      avatar: user.avatarUrl ? undefined : (user.role === 'platform_admin' ? '👑' : '🧑‍🎓')
+    }));
+
+    if (user.id && !user.id.startsWith('usr-admin-') && !user.id.startsWith('usr-local-') && supabase) {
+      syncUserAuthWithSupabase({ id: user.id, email: user.email, user_metadata: { full_name: user.fullName, avatar_url: user.avatarUrl } });
     }
   };
 
@@ -248,6 +315,12 @@ export default function App() {
     setUserSchoolLink(null);
     setCurrentRole('student');
     setActiveTab('dashboard');
+    setStudentProfile(prev => ({
+      ...prev,
+      name: 'طالب منصة هتاف العاصمي',
+      avatar: '🧑‍🎓',
+      avatarUrl: undefined
+    }));
   };
 
   // Security Toast Alert State
@@ -751,6 +824,17 @@ export default function App() {
                       setSolverQuestion('');
                       handleSetActiveTabGuard('solver');
                     }}
+                    onUpdateProfile={(updated) => {
+                      setStudentProfile(updated);
+                      try {
+                        localStorage.setItem('htaf_student_profile', JSON.stringify(updated));
+                      } catch (e) {
+                        console.warn('Failed to persist student profile', e);
+                      }
+                    }}
+                    currentUser={currentUser}
+                    currentSchool={currentSchool}
+                    onOpenLoginModal={() => setIsLoginModalOpen(true)}
                   />
                 )}
 

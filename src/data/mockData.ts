@@ -1614,10 +1614,10 @@ export const CURRICULUM_BOOKS: CurriculumBook[] = [
 
 export const INITIAL_STUDENT_PROFILE: StudentProfile = {
   id: 'std-2026-01',
-  name: 'سارة عبد الله العاصمي',
+  name: 'طالب منصة هتاف العاصمي',
   grade: 'الصف الثالث المتوسط (شعبة 3/أ)',
   stage: 'middle',
-  avatar: '👧',
+  avatar: '🧑‍🎓',
   schoolSlug: 'al-namouthajya',
   screenTimeDailyLimitMinutes: 90,
   screenTimeUsedTodayMinutes: 42,

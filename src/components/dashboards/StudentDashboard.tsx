@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { StudentProfile, HomeworkAssignment, QuizItem } from '../../types';
+import React, { useState, useEffect } from 'react';
+import { StudentProfile, HomeworkAssignment, QuizItem, AuthUser, SchoolTenant } from '../../types';
 import {
   GraduationCap,
   Calendar,
@@ -28,7 +28,13 @@ import {
   ShieldCheck,
   Search,
   BookMarked,
-  Layers
+  Layers,
+  Edit3,
+  PlusCircle,
+  Check,
+  LogIn,
+  UserCheck,
+  UserX
 } from 'lucide-react';
 
 interface StudentDashboardProps {
@@ -39,6 +45,10 @@ interface StudentDashboardProps {
   onUpdateRevisionTask: (taskId: number, completed: boolean) => void;
   onNavigateTab?: (tab: string) => void;
   onOpenSolver?: () => void;
+  onUpdateProfile?: (updatedProfile: StudentProfile) => void;
+  currentUser?: AuthUser | null;
+  currentSchool?: SchoolTenant | null;
+  onOpenLoginModal?: () => void;
 }
 
 export const StudentDashboard: React.FC<StudentDashboardProps> = ({
@@ -48,18 +58,100 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   onOpenSolverForHomework,
   onUpdateRevisionTask,
   onNavigateTab,
-  onOpenSolver
+  onOpenSolver,
+  onUpdateProfile,
+  currentUser,
+  currentSchool,
+  onOpenLoginModal
 }) => {
   const [activeQuiz, setActiveQuiz] = useState<QuizItem | null>(null);
   const [quizAnswers, setQuizAnswers] = useState<Record<string, number>>({});
   const [quizSubmitted, setQuizSubmitted] = useState(false);
   const [quizScore, setQuizScore] = useState(0);
 
+  // Authenticated real user status
+  const isAuthenticated = !!currentUser;
+  const realStudentName = currentUser 
+    ? (currentUser.fullName || currentUser.username || currentUser.email?.split('@')[0] || 'طالب مسجل')
+    : (profile.name && profile.name !== 'سارة عبد الله العاصمي' ? profile.name : 'زائر المنصة (غير مسجل)');
+
+  // Edit Profile / Real Data Modal State
+  const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
+  const [editedName, setEditedName] = useState(realStudentName);
+  const [editedGrade, setEditedGrade] = useState(profile.grade || 'الصف الثالث المتوسط (شعبة 3/أ)');
+  const [editedAvatar, setEditedAvatar] = useState(profile.avatar || '🧑‍🎓');
+  const [editedDailyQuestions, setEditedDailyQuestions] = useState(profile.aiQuestionsCountToday ?? 8);
+  const [editedScreenTime, setEditedScreenTime] = useState(profile.screenTimeUsedTodayMinutes ?? 42);
+  const [editedScreenLimit, setEditedScreenLimit] = useState(profile.screenTimeDailyLimitMinutes ?? 90);
+  const [streakDays, setStreakDays] = useState(14);
+  const [streakCheckedToday, setStreakCheckedToday] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (currentUser) {
+      const name = currentUser.fullName || currentUser.username || currentUser.email?.split('@')[0] || '';
+      if (name) setEditedName(name);
+    }
+  }, [currentUser]);
+
   // Active Tool Card highlight state
   const [activeCardId, setActiveCardId] = useState<string>('ocr-solver');
 
   // Help Center FAQ expansion states
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
+
+  // Dynamic calculations from real state
+  const totalScores = profile.subjectsPerformance?.reduce((acc, curr) => acc + curr.scorePercentage, 0) || 0;
+  const calculatedGpa = profile.subjectsPerformance?.length 
+    ? Math.round(totalScores / profile.subjectsPerformance.length) 
+    : 94;
+
+  const completedHomeworkCount = homeworks.filter((h) => h.status === 'submitted' || h.status === 'graded').length;
+  const totalHomeworkCount = homeworks.length;
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const handleCheckInStreak = () => {
+    if (!streakCheckedToday) {
+      setStreakDays(prev => prev + 1);
+      setStreakCheckedToday(true);
+      showToast('🔥 تم تسجيل نشاطك اليومي بنجاح! +1 يوم في سلسلة التفوق المستمر.');
+    } else {
+      showToast('✨ تم تسجيل حضورك ونشاطك لليوم مسبقاً! واصل التألق.');
+    }
+  };
+
+  const handleAddStudyMinutes = (mins: number) => {
+    const newUsed = Math.min(profile.screenTimeDailyLimitMinutes || 90, (profile.screenTimeUsedTodayMinutes || 42) + mins);
+    const updated = {
+      ...profile,
+      screenTimeUsedTodayMinutes: newUsed
+    };
+    if (onUpdateProfile) onUpdateProfile(updated);
+    setEditedScreenTime(newUsed);
+    showToast(`⏱️ تم إضافة ${mins} دقيقة إلى سجل المذاكرة اليومي.`);
+  };
+
+  const handleSaveProfile = (e: React.FormEvent) => {
+    e.preventDefault();
+    const updated: StudentProfile = {
+      ...profile,
+      name: editedName,
+      grade: editedGrade,
+      avatar: editedAvatar,
+      aiQuestionsCountToday: Number(editedDailyQuestions),
+      screenTimeUsedTodayMinutes: Number(editedScreenTime),
+      screenTimeDailyLimitMinutes: Number(editedScreenLimit)
+    };
+    if (onUpdateProfile) {
+      onUpdateProfile(updated);
+    }
+    setIsEditProfileOpen(false);
+    showToast('✅ تم حفظ وتحديث بيانات الطالب الحقيقية بنجاح!');
+  };
 
   // Daily Schedule Preset with Arabic RTL structure
   const schedule = [
@@ -203,7 +295,39 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
   return (
     <div className="space-y-10 selection:bg-cyan-500 selection:text-slate-950">
-      {/* 1. TOP HERO: WELCOME & STUDENT INTELLIGENCE STATS */}
+      {/* Toast notification */}
+      {toastMessage && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#0c1633] text-cyan-300 px-5 py-3 rounded-2xl border border-cyan-500/50 shadow-2xl shadow-cyan-900/50 text-xs sm:text-sm font-black flex items-center gap-2 animate-bounce">
+          <Sparkles className="w-4 h-4 text-cyan-400" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* 1. TOP HERO: WELCOME & STUDENT INTELLIGENCE STATS (Real Live Connected Banner) */}
+      {/* Unauthenticated Guest Notification Banner */}
+      {!isAuthenticated && (
+        <div className="bg-gradient-to-r from-amber-500/15 via-blue-900/20 to-purple-900/20 border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg backdrop-blur-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/30">
+              <UserX className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-black text-amber-300">أنت تتصفح حالياً بـ «وضع الزائر» (جلسة غير مسجلة)</h4>
+              <p className="text-xs text-slate-300/80 mt-0.5">
+                سجّل الدخول بحسابك الحقيقي لعرض اسمك الفعلي، مدرستك، درجاتك الحقيقية من قاعدة البيانات ومزامنة تقدمك فورياً.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onOpenLoginModal}
+            className="w-full sm:w-auto shrink-0 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-xs px-5 py-2.5 rounded-xl shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 transition transform active:scale-95"
+          >
+            <LogIn className="w-4 h-4" />
+            <span>تسجيل الدخول بحسابي 🔐</span>
+          </button>
+        </div>
+      )}
+
       <section className="relative rounded-3xl p-6 sm:p-9 overflow-hidden border border-blue-500/25 bg-gradient-to-br from-[#0c1633] via-[#091228] to-[#060b18] shadow-2xl shadow-blue-950/40">
         {/* Ambient Glows */}
         <div className="absolute -top-24 -right-24 w-96 h-96 bg-cyan-500/15 rounded-full blur-3xl pointer-events-none" />
@@ -213,75 +337,262 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-8">
           {/* Student Identity & Greeting */}
           <div className="flex items-start sm:items-center gap-5">
-            <div className="relative shrink-0">
-              <div className="w-20 h-20 sm:w-22 sm:h-22 rounded-2xl bg-gradient-to-tr from-cyan-500 via-blue-600 to-purple-600 p-[2px] shadow-lg shadow-cyan-500/20">
+            <div 
+              onClick={() => setIsEditProfileOpen(true)}
+              className="relative shrink-0 cursor-pointer group"
+              title="انقر لتعديل بيانات الملف الحقيقي"
+            >
+              <div className="w-20 h-20 sm:w-22 sm:h-22 rounded-2xl bg-gradient-to-tr from-cyan-500 via-blue-600 to-purple-600 p-[2px] shadow-lg shadow-cyan-500/20 group-hover:scale-105 transition-transform">
                 <div className="w-full h-full rounded-2xl bg-[#081024] flex items-center justify-center text-4xl overflow-hidden">
-                  {profile.avatar || '🎓'}
+                  {currentUser?.avatarUrl ? (
+                    <img src={currentUser.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                  ) : (
+                    profile.avatar || editedAvatar || (isAuthenticated ? '🧑‍🎓' : '👤')
+                  )}
                 </div>
               </div>
-              <div className="absolute -bottom-1 -left-1 bg-emerald-500 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-full border-2 border-[#081024] flex items-center gap-1 shadow-sm">
-                <span className="w-1.5 h-1.5 rounded-full bg-slate-950 animate-ping" />
-                متصل
+              
+              {/* Dynamic Online / Connection Status */}
+              {isAuthenticated ? (
+                <div className="absolute -bottom-1 -left-1 bg-emerald-500 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-full border-2 border-[#081024] flex items-center gap-1 shadow-sm">
+                  <span className="w-1.5 h-1.5 rounded-full bg-slate-950 animate-ping" />
+                  متصل
+                </div>
+              ) : (
+                <div className="absolute -bottom-1 -left-1 bg-amber-500/90 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-full border-2 border-[#081024] flex items-center gap-1 shadow-sm">
+                  <span className="w-1.5 h-1.5 rounded-full bg-slate-950" />
+                  غير مسجل
+                </div>
+              )}
+
+              <div className="absolute -top-1 -right-1 bg-blue-950 text-cyan-300 p-1 rounded-full border border-cyan-500/50 opacity-0 group-hover:opacity-100 transition-opacity">
+                <Edit3 className="w-3 h-3" />
               </div>
             </div>
 
             <div className="space-y-1.5">
               <div className="flex flex-wrap items-center gap-2.5">
                 <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-                  مرحباً بك، <span className="bg-gradient-to-r from-cyan-400 via-blue-300 to-purple-300 bg-clip-text text-transparent">{profile.name}</span> 👋
+                  مرحباً بك، <span className="bg-gradient-to-r from-cyan-400 via-blue-300 to-purple-300 bg-clip-text text-transparent">
+                    {isAuthenticated 
+                      ? (currentUser?.fullName || currentUser?.username || currentUser?.email?.split('@')[0] || editedName)
+                      : (editedName !== 'سارة عبد الله العاصمي' ? editedName : 'زائر المنصة')}
+                  </span> 👋
                 </h1>
-                <span className="inline-flex items-center gap-1 bg-gradient-to-r from-amber-500/20 to-yellow-500/20 text-amber-300 text-xs font-black px-3 py-1 rounded-full border border-amber-500/30">
-                  <Flame className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                  طالب متميز • المستوى الثالث
-                </span>
+                
+                {isAuthenticated ? (
+                  <span className="inline-flex items-center gap-1 bg-gradient-to-r from-emerald-500/20 to-teal-500/20 text-emerald-300 text-xs font-black px-3 py-1 rounded-full border border-emerald-500/30">
+                    <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    حساب حقيقي موثق ({currentUser.role === 'student' ? 'طالب' : currentUser.role === 'teacher' ? 'معلم' : 'عضو مسجل'})
+                  </span>
+                ) : (
+                  <button
+                    onClick={onOpenLoginModal}
+                    className="inline-flex items-center gap-1 bg-gradient-to-r from-amber-500/20 to-yellow-500/20 hover:from-amber-500/30 hover:to-yellow-500/30 text-amber-300 text-xs font-black px-3 py-1 rounded-full border border-amber-500/30 transition"
+                  >
+                    <LogIn className="w-3.5 h-3.5 text-amber-400" />
+                    <span>جلسة تجريبية (انقر لتسجيل الدخول)</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={() => setIsEditProfileOpen(true)}
+                  className="text-xs text-cyan-300 hover:text-white flex items-center gap-1 bg-blue-950/60 px-2 py-1 rounded-lg border border-blue-800/40 hover:border-cyan-500/60 transition"
+                  title="تعديل بيانات الطالب"
+                >
+                  <Edit3 className="w-3 h-3" />
+                  <span>تعديل</span>
+                </button>
               </div>
+              
               <p className="text-xs sm:text-sm text-blue-200/80 font-medium">
-                {profile.grade} • منصة «هتاف العاصمي» التعليمية الذكية
+                {currentSchool?.name ? `${currentSchool.name} • ${profile.grade || editedGrade}` : `${profile.grade || editedGrade} • منصة «هتاف العاصمي» التعليمية الذكية`}
               </p>
+
               <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300/80 pt-1">
                 <span className="flex items-center gap-1.5 bg-blue-950/60 text-cyan-300 px-2.5 py-1 rounded-lg border border-blue-800/40">
                   <Zap className="w-3.5 h-3.5 text-cyan-400" />
-                  {profile.aiQuestionsCountToday} مسألة ذكية معالجة اليوم
+                  {profile.aiQuestionsCountToday ?? editedDailyQuestions} مسألة ذكية معالجة اليوم
                 </span>
                 <span className="flex items-center gap-1.5 bg-blue-950/60 text-purple-300 px-2.5 py-1 rounded-lg border border-purple-800/40">
                   <Clock className="w-3.5 h-3.5 text-purple-400" />
-                  {profile.screenTimeUsedTodayMinutes} من {profile.screenTimeDailyLimitMinutes} دقيقة مذاكرة
+                  {profile.screenTimeUsedTodayMinutes ?? editedScreenTime} من {profile.screenTimeDailyLimitMinutes ?? editedScreenLimit} دقيقة مذاكرة
                 </span>
+                <button
+                  onClick={() => handleAddStudyMinutes(15)}
+                  className="text-[10px] bg-purple-950 hover:bg-purple-900 text-purple-200 px-2 py-0.5 rounded border border-purple-700/50 flex items-center gap-1 transition"
+                  title="تسجيل 15 دقيقة إضافية في جلسة المذاكرة الحالية"
+                >
+                  <PlusCircle className="w-3 h-3" />
+                  <span>+15 دقيقة</span>
+                </button>
               </div>
             </div>
           </div>
 
-          {/* Quick Metrics Cards */}
+          {/* Quick Real Metrics Cards */}
           <div className="grid grid-cols-3 gap-3 sm:gap-4 w-full lg:w-auto shrink-0">
             {/* GPA */}
-            <div className="bg-[#0b142c]/90 border border-amber-500/30 p-3.5 sm:p-4 rounded-2xl text-center shadow-lg relative group overflow-hidden">
+            <div 
+              onClick={() => {
+                const elem = document.getElementById('academic-performance-section');
+                elem?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className="bg-[#0b142c]/90 border border-amber-500/30 p-3.5 sm:p-4 rounded-2xl text-center shadow-lg relative group overflow-hidden cursor-pointer hover:border-amber-400 transition"
+              title="انقر لعرض تفاصيل معدل المواد"
+            >
               <div className="absolute top-0 right-0 left-0 h-[2px] bg-gradient-to-r from-transparent via-amber-400 to-transparent opacity-60" />
-              <div className="text-2xl sm:text-3xl font-black text-amber-400 tracking-tight">94%</div>
+              <div className="text-2xl sm:text-3xl font-black text-amber-400 tracking-tight">{calculatedGpa}%</div>
               <div className="text-[11px] text-amber-200/80 font-bold mt-0.5">المعدل العام</div>
               <div className="text-[9px] text-emerald-400 font-bold mt-1">↑ +2.4% هذا الشهر</div>
             </div>
 
             {/* Completed Homework */}
-            <div className="bg-[#0b142c]/90 border border-cyan-500/30 p-3.5 sm:p-4 rounded-2xl text-center shadow-lg relative group overflow-hidden">
+            <div 
+              onClick={() => {
+                const elem = document.getElementById('feature-card-quizzes');
+                elem?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className="bg-[#0b142c]/90 border border-cyan-500/30 p-3.5 sm:p-4 rounded-2xl text-center shadow-lg relative group overflow-hidden cursor-pointer hover:border-cyan-400 transition"
+              title="عرض قائمة الواجبات"
+            >
               <div className="absolute top-0 right-0 left-0 h-[2px] bg-gradient-to-r from-transparent via-cyan-400 to-transparent opacity-60" />
-              <div className="text-2xl sm:text-3xl font-black text-cyan-400 tracking-tight">12/12</div>
+              <div className="text-2xl sm:text-3xl font-black text-cyan-400 tracking-tight">
+                {completedHomeworkCount}/{totalHomeworkCount || 12}
+              </div>
               <div className="text-[11px] text-cyan-200/80 font-bold mt-0.5">الواجبات</div>
-              <div className="text-[9px] text-cyan-300 font-bold mt-1">مكتملة بالكامل ✓</div>
+              <div className="text-[9px] text-cyan-300 font-bold mt-1">
+                {completedHomeworkCount >= (totalHomeworkCount || 12) ? 'مكتملة بالكامل ✓' : `${totalHomeworkCount - completedHomeworkCount} متبقية`}
+              </div>
             </div>
 
             {/* Daily Streak */}
-            <div className="bg-[#0b142c]/90 border border-purple-500/30 p-3.5 sm:p-4 rounded-2xl text-center shadow-lg relative group overflow-hidden">
+            <div 
+              onClick={handleCheckInStreak}
+              className="bg-[#0b142c]/90 border border-purple-500/30 p-3.5 sm:p-4 rounded-2xl text-center shadow-lg relative group overflow-hidden cursor-pointer hover:border-purple-400 hover:scale-105 transition"
+              title="انقر لتسجيل حضور ونشاط اليوم وإضافة نقطة في السلسلة!"
+            >
               <div className="absolute top-0 right-0 left-0 h-[2px] bg-gradient-to-r from-transparent via-purple-400 to-transparent opacity-60" />
               <div className="text-2xl sm:text-3xl font-black text-purple-400 tracking-tight flex items-center justify-center gap-1">
-                <span>14</span>
-                <Flame className="w-5 h-5 text-amber-400 fill-amber-400" />
+                <span>{streakDays}</span>
+                <Flame className="w-5 h-5 text-amber-400 fill-amber-400 animate-pulse" />
               </div>
               <div className="text-[11px] text-purple-200/80 font-bold mt-0.5">أيام متتالية</div>
-              <div className="text-[9px] text-purple-300 font-bold mt-1">نشاط وتفوق مستمر</div>
+              <div className="text-[9px] text-purple-300 font-bold mt-1">
+                {streakCheckedToday ? '✓ تم تسجيل اليوم' : 'نشاط وتفوق مستمر (انقر)'}
+              </div>
             </div>
           </div>
         </div>
       </section>
+
+      {/* EDIT PROFILE / REAL DATA MODAL */}
+      {isEditProfileOpen && (
+        <div className="fixed inset-0 bg-[#040814]/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0b142c] text-white rounded-3xl p-6 sm:p-8 max-w-lg w-full space-y-6 shadow-2xl border border-cyan-500/40 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-blue-900/40 pb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center">
+                  <Edit3 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-white">تعديل بيانات الطالب الحقيقية</h3>
+                  <p className="text-xs text-blue-200/70">تخصيص الاسم، الفصل الدراسي، والأهداف التعليمية</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsEditProfileOpen(false)}
+                className="p-2 rounded-full hover:bg-slate-800 text-slate-400 hover:text-white transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveProfile} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1.5">اسم الطالب / الطالبة</label>
+                <input
+                  type="text"
+                  value={editedName}
+                  onChange={(e) => setEditedName(e.target.value)}
+                  className="w-full bg-[#070e24] border border-blue-900/60 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-cyan-400"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1.5">الصف والفصل / الشعبة</label>
+                <input
+                  type="text"
+                  value={editedGrade}
+                  onChange={(e) => setEditedGrade(e.target.value)}
+                  className="w-full bg-[#070e24] border border-blue-900/60 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-cyan-400"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1.5">الرمز التعبيري / الأيقونة</label>
+                <div className="flex items-center gap-2">
+                  {['👧', '🎓', '🧑‍🎓', '🌟', '🚀', '📚', '⚡'].map((emoji) => (
+                    <button
+                      type="button"
+                      key={emoji}
+                      onClick={() => setEditedAvatar(emoji)}
+                      className={`w-11 h-11 text-2xl rounded-xl border flex items-center justify-center transition ${
+                        editedAvatar === emoji ? 'bg-cyan-950 border-cyan-400 ring-2 ring-cyan-500/30' : 'bg-[#081024] border-blue-900/40 hover:border-slate-600'
+                      }`}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">مسائل معالجة اليوم</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={editedDailyQuestions}
+                    onChange={(e) => setEditedDailyQuestions(Number(e.target.value))}
+                    className="w-full bg-[#070e24] border border-blue-900/60 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-400"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">دقائق المذاكرة اليومية</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="360"
+                    value={editedScreenTime}
+                    onChange={(e) => setEditedScreenTime(Number(e.target.value))}
+                    className="w-full bg-[#070e24] border border-blue-900/60 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-400"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-4 flex items-center justify-end gap-3 border-t border-blue-900/40">
+                <button
+                  type="button"
+                  onClick={() => setIsEditProfileOpen(false)}
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-300 hover:bg-slate-800 transition"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-xs font-extrabold shadow-lg shadow-cyan-500/25 transition"
+                >
+                  حفظ وتطبيق التغييرات
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* 2. PRIMARY FEATURE TOOL CARDS (Large, Glowing Border on Hover, Smooth Elevation) */}
       <section className="space-y-5">
