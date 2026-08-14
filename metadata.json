@@ -1,6 +1,6 @@
 {
   "name": "هتاف العاصمي - منصة تعليمية ذكية",
   "description": "منصة هتاف العاصمي التعليمية الذكية المتكاملة: إدارة المدارس، المعلمين، الطلاب، الفصول، المواد والمناهج، حل المسائل بالذكاء الاصطناعي مع OCR، الاختبارات والتقييمات، الحضور والدرجات، والجداول الدراسية.",
-  "requestFramePermissions": ["camera"],
+  "requestFramePermissions": ["camera", "geolocation"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -122,20 +122,35 @@ export async function getCurrentSupabaseUser() {
 export interface DbSchool {
   id: string;
   name: string;
-  type: string; // حكومية / أهلية / عالمية
-  gender_type: string; // بنين / بنات / مشتركة
-  stage: string; // ابتدائي / متوسط / ثانوي / مجمع
-  country: string;
-  region: string;
-  city: string;
-  principal_name: string;
-  phone: string;
-  email: string;
+  type?: string; // حكومي / أهلي / عالمي / تحفيظ قرآن / تربية خاصة / أخرى
+  education_type?: string;
+  gender_type?: string; // بنين / بنات / مشتركة
+  school_gender?: 'boys' | 'girls' | 'mixed' | string;
+  stage?: string; // ابتدائي / متوسط / ثانوي / مجمع تعليمي / روضة
+  country?: string;
+  region?: string;
+  region_id?: string;
+  governorate?: string;
+  governorate_id?: string;
+  city?: string;
+  city_id?: string;
+  district?: string;
+  short_national_address?: string;
+  postal_code?: string;
+  latitude?: number;
+  longitude?: number;
+  education_directorate?: string;
+  moe_code?: string;
+  principal_name?: string;
+  phone?: string;
+  email?: string;
   license_number?: string;
-  academic_year: string;
+  academic_year?: string;
   logo_url?: string;
   slug: string; // e.g. hataf-school
-  status: 'active' | 'pending' | 'suspended' | 'inactive';
+  invitation_code?: string; // e.g. SCH-K7P4X9
+  reference_number?: string; // e.g. INV-2026-000041
+  status: 'active' | 'pending' | 'pending_review' | 'suspended' | 'inactive';
   created_at: string;
 }
 

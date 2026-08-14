@@ -14,7 +14,11 @@ export interface AuthUser {
   badge?: string;
 }
 
-export type EducationalStage = 'primary' | 'middle' | 'secondary';
+export type EducationalStage = 'primary' | 'middle' | 'secondary' | 'kindergarten' | 'all';
+export type SchoolGender = 'boys' | 'girls' | 'mixed';
+export type SchoolEducationType = 'حكومي' | 'أهلي' | 'عالمي' | 'تحفيظ قرآن' | 'تربية خاصة' | 'أخرى';
+export type SchoolStage = 'ابتدائي' | 'متوسط' | 'ثانوي' | 'مجمع تعليمي' | 'روضة';
+export type SchoolStatus = 'pending_review' | 'active' | 'suspended';
 
 export interface SchoolTenant {
   id: string;
@@ -27,6 +31,27 @@ export interface SchoolTenant {
   accentColor: string;
   motto: string;
   location: string;
+  gender?: SchoolGender; // boys, girls, mixed
+  educationType?: SchoolEducationType; // حكومي, أهلي, عالمي, تحفيظ قرآن, تربية خاصة, أخرى
+  stage?: SchoolStage; // ابتدائي, متوسط, ثانوي, مجمع تعليمي, روضة
+  regionId?: string;
+  regionName?: string;
+  governorateId?: string;
+  governorateName?: string;
+  cityId?: string;
+  cityName?: string;
+  district?: string;
+  shortNationalAddress?: string;
+  postalCode?: string;
+  latitude?: number;
+  longitude?: number;
+  educationDirectorate?: string;
+  moeCode?: string; // الرقم الوزاري إن توفر
+  officialEmail?: string;
+  phone?: string;
+  status?: SchoolStatus; // pending_review, active, suspended
+  invitationCode?: string; // Unique, e.g. SCH-K7P4X9
+  referenceNumber?: string; // Unique, e.g. INV-2026-000041
   registrationCodeUsed?: string;
   isApproved?: boolean;
   principalName?: string;
