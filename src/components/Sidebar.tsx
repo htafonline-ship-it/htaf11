@@ -1,5 +1,6 @@
 import React from 'react';
 import { UserRole, SchoolTenant, AuthUser } from '../types';
+import { BrandLogo } from './BrandLogo';
 import {
   Sparkles,
   GraduationCap,
@@ -90,25 +91,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="p-4 border-b border-blue-900/40 flex items-center justify-between relative z-10">
         <div
           onClick={() => handleTabClick('dashboard')}
-          className="flex items-center gap-3 cursor-pointer group"
+          className="flex items-center cursor-pointer group"
           id="sidebar-brand-link"
         >
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 via-blue-600 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-cyan-500/25 group-hover:scale-105 transition-transform shrink-0 p-[1.5px]">
-            <div className="w-full h-full bg-[#070e22] rounded-[10px] flex items-center justify-center">
-              <BrainCircuit className="w-5 h-5 text-cyan-400 group-hover:rotate-12 transition-transform" />
-            </div>
-          </div>
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-lg font-black bg-gradient-to-r from-cyan-400 via-blue-200 to-purple-300 bg-clip-text text-transparent tracking-tight">
-                هتاف العاصمي
-              </span>
-              <span className="bg-cyan-950 text-cyan-300 text-[10px] font-black px-1.5 py-0.5 rounded-full border border-cyan-800/60">
-                v3.0 AI
-              </span>
-            </div>
-            <p className="text-[11px] text-blue-300/70 font-medium">المنصة التعليمية الذكية</p>
-          </div>
+          <BrandLogo size="md" showText={true} showVersion={true} />
         </div>
 
         {/* Mobile Close Button */}

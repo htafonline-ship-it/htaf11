@@ -1,5 +1,6 @@
 import React from 'react';
 import { UserRole, SchoolTenant, AuthUser } from '../types';
+import { BrandLogo } from './BrandLogo';
 import {
   Menu,
   Sparkles,
@@ -95,10 +96,11 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             <button
               id="topheader-mobile-menu-btn"
               onClick={onOpenMobileSidebar}
-              className="lg:hidden p-2 rounded-xl text-slate-300 hover:text-cyan-300 hover:bg-[#0d1838] transition border border-blue-900/40"
+              className="lg:hidden p-1.5 rounded-xl text-slate-300 hover:text-cyan-300 hover:bg-[#0d1838] transition border border-blue-900/40 flex items-center gap-2"
               aria-label="فتح القائمة الجانبية"
             >
               <Menu className="w-5 h-5" />
+              <BrandLogo size="xs" glow={false} />
             </button>
 
             {/* Active Tab Page Title Indicator */}

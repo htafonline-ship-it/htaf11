@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { AuthUser, UserRole } from '../types';
 import { signInWithGoogle, signInWithEmail, isSupabaseConfigured } from '../lib/supabase';
+import { BrandLogo } from './BrandLogo';
 import {
   X,
   Lock,
@@ -178,9 +179,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           </button>
 
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30 font-black text-xl">
-              🔑
-            </div>
+            <BrandLogo size="md" glow={true} />
             <div>
               <h3 className="text-lg font-black tracking-tight">الدخول التفاعلي للمنصة</h3>
               <p className="text-xs text-slate-400 font-medium">نظام التوثيق الموحد Supabase Auth + Google</p>
