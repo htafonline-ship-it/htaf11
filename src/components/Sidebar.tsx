@@ -19,7 +19,8 @@ import {
   Layers,
   ChevronLeft,
   ScanLine,
-  FileCheck2
+  FileCheck2,
+  MapPin
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -355,6 +356,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <ChevronLeft className="w-3.5 h-3.5 opacity-60" />
                 </button>
               )}
+
+              {/* Kharj Schools Directory & Invitations */}
+              <button
+                id="sidebar-nav-kharj-schools"
+                onClick={() => handleTabClick('kharj-schools')}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-right ${
+                  activeTab === 'kharj-schools'
+                    ? 'bg-gradient-to-r from-emerald-500/20 to-teal-600/30 text-emerald-300 border border-emerald-400/50 shadow-md shadow-emerald-500/15 font-black'
+                    : 'text-emerald-300 bg-emerald-950/30 hover:bg-emerald-950/60 border border-emerald-900/40'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <MapPin className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>مدارس ومراكز الخرج</span>
+                </div>
+                <span className="text-[10px] px-1.5 py-0.5 rounded font-black bg-emerald-950 text-emerald-300 border border-emerald-800/40">
+                  دعوات
+                </span>
+              </button>
 
               {/* Platform Admin */}
               {isPlatformAdmin && (

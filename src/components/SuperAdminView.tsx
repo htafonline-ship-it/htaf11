@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { SchoolTenant, SchoolRegistrationCode, CurriculumBook } from '../types';
 import { CurriculumImportView } from './CurriculumImportView';
+import { KharjSchoolsHub } from './KharjSchoolsHub';
 import {
   Crown,
   KeyRound,
@@ -21,7 +22,9 @@ import {
   AlertCircle,
   BookOpen,
   Eye,
-  EyeOff
+  EyeOff,
+  MapPin,
+  Send
 } from 'lucide-react';
 
 interface SuperAdminViewProps {
@@ -53,7 +56,7 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
   onReplaceBookVersion,
   onDeleteBook
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'codes' | 'schools' | 'new_code' | 'curriculum_import'>('curriculum_import');
+  const [activeSubTab, setActiveSubTab] = useState<'codes' | 'schools' | 'new_code' | 'curriculum_import' | 'kharj_schools'>('kharj_schools');
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
@@ -237,6 +240,18 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
       <div className="flex items-center justify-between gap-4 bg-white p-2 rounded-2xl border border-slate-200 shadow-sm overflow-x-auto">
         <div className="flex items-center gap-2">
           <button
+            onClick={() => setActiveSubTab('kharj_schools')}
+            className={`px-4 py-2.5 rounded-xl text-xs font-black transition flex items-center gap-2 whitespace-nowrap ${
+              activeSubTab === 'kharj_schools'
+                ? 'bg-gradient-to-r from-emerald-600 to-teal-700 text-white shadow-md'
+                : 'text-slate-700 hover:bg-emerald-50 hover:text-emerald-800'
+            }`}
+          >
+            <MapPin className="w-4 h-4 text-emerald-400" />
+            <span>مدارس ومراكز محافظة الخرج ودعوات الارتباط</span>
+          </button>
+
+          <button
             onClick={() => setActiveSubTab('curriculum_import')}
             className={`px-4 py-2.5 rounded-xl text-xs font-black transition flex items-center gap-2 whitespace-nowrap ${
               activeSubTab === 'curriculum_import'
@@ -298,6 +313,15 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
           </div>
         )}
       </div>
+
+      {/* KHARJ SCHOOLS & CENTERS INVITATIONS HUB TAB */}
+      {activeSubTab === 'kharj_schools' && (
+        <KharjSchoolsHub
+          onRegisterSchool={onRegisterSchoolByCode}
+          onAddRegistrationCode={onAddRegistrationCode}
+          existingSchools={schools}
+        />
+      )}
 
       {/* CURRICULUM IMPORT TAB */}
       {activeSubTab === 'curriculum_import' && (

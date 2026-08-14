@@ -61,6 +61,7 @@ import { CurriculumLibraryView } from './components/CurriculumLibraryView';
 import { SchoolManagementView } from './components/SchoolManagementView';
 import { MessagingView } from './components/MessagingView';
 import { SuperAdminView } from './components/SuperAdminView';
+import { KharjSchoolsHub } from './components/KharjSchoolsHub';
 
 import { StudentDashboard } from './components/dashboards/StudentDashboard';
 import { ParentDashboard } from './components/dashboards/ParentDashboard';
@@ -762,6 +763,16 @@ export default function App() {
               />
             )}
 
+            {activeTab === 'kharj-schools' && (
+              <div className="max-w-7xl mx-auto px-4 py-8">
+                <KharjSchoolsHub
+                  onRegisterSchool={handleRegisterSchoolByCode}
+                  onAddRegistrationCode={handleAddRegistrationCode}
+                  existingSchools={schools}
+                />
+              </div>
+            )}
+
             {activeTab === 'solver' && (
               <AISolverView initialQuestion={solverQuestion} />
             )}
@@ -847,6 +858,9 @@ export default function App() {
 
                 {currentRole === 'teacher' && (
                   <TeacherDashboard
+                    currentUser={currentUser}
+                    currentSchool={currentSchool}
+                    userSchoolLink={userSchoolLink}
                     homeworks={homeworks}
                     onAddHomework={handleAddHomework}
                     onAddQuiz={handleAddQuiz}

@@ -36,6 +36,40 @@ export interface SchoolTenant {
   circulars: SchoolCircular[];
 }
 
+export type SchoolInvitationStatus = 'draft' | 'sent' | 'viewed' | 'registered' | 'verified' | 'activated';
+
+export interface SchoolInvitation {
+  id: string;
+  schoolId: string;
+  schoolName: string;
+  invitationCode: string; // e.g. SCH-7K9P2X
+  referenceNumber: string; // e.g. INV-2026-000124
+  status: SchoolInvitationStatus;
+  recipientEmail?: string;
+  recipientPhone?: string;
+  center?: string;
+  district?: string;
+  notes?: string;
+  sentAt?: string;
+  viewedAt?: string;
+  registeredAt?: string;
+  verifiedAt?: string;
+  activatedAt?: string;
+  expiresAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PlatformLetterSettings {
+  founderName: string;
+  founderTitle: string;
+  founderSubtitle: string;
+  organizationName: string;
+  contactEmail: string;
+  contactWebsite: string;
+  officialDisclaimer: string;
+}
+
 export interface SchoolRegistrationCode {
   id: string;
   code: string;
@@ -414,4 +448,148 @@ export interface SchoolCircular {
   content: string;
   targetAudience: 'الجميع' | 'الطلاب' | 'أولياء الأمور' | 'المعلمون';
   attachedDocName?: string;
+}
+
+// -------------------------------------------------------------
+// TEACHER OPERATIONAL SYSTEM TYPES
+// -------------------------------------------------------------
+
+export type DayOfWeek = 'الأحد' | 'الاثنين' | 'الإثنين' | 'الثلاثاء' | 'الأربعاء' | 'الخميس' | 'الجمعة' | 'السبت';
+
+export interface ClassSchedulePeriod {
+  id: string;
+  schoolId: string;
+  teacherId: string;
+  teacherName?: string;
+  gradeName: string;
+  classroomName: string;
+  dayOfWeek: DayOfWeek;
+  periodNumber: number; // 1 - 7
+  subjectName: string;
+  startTime: string; // e.g. "07:30"
+  endTime: string;   // e.g. "08:15"
+  room?: string;     // e.g. "مختبر العلوم 1"
+  isRepeatedWeekly?: boolean;
+  createdAt?: string;
+}
+
+export type StudentNoteType =
+  | 'ملاحظة دراسية'
+  | 'تميز'
+  | 'تحسن'
+  | 'واجب غير مكتمل'
+  | 'ضعف في مادة'
+  | 'سلوك'
+  | 'حضور'
+  | 'تأخر'
+  | 'ملاحظة عامة';
+
+export interface StudentNote {
+  id: string;
+  schoolId: string;
+  studentId: string;
+  studentName: string;
+  teacherId: string;
+  teacherName: string;
+  gradeName?: string;
+  classroomName?: string;
+  noteType: StudentNoteType;
+  title: string;
+  content: string;
+  subjectName?: string;
+  importanceLevel: 'عادي' | 'هام' | 'عاجل';
+  isParentVisible: boolean;
+  isStudentVisible: boolean;
+  isAdminOnly: boolean;
+  createdAt: string;
+}
+
+export type AttendanceStatus =
+  | 'حاضر'
+  | 'غائب'
+  | 'غائب بعذر'
+  | 'متأخر'
+  | 'present'
+  | 'absent'
+  | 'excused'
+  | 'late';
+
+export interface AttendanceRecord {
+  id: string;
+  schoolId: string;
+  teacherId: string;
+  teacherName?: string;
+  gradeName: string;
+  classroomName: string;
+  date: string; // YYYY-MM-DD
+  periodNumber: number;
+  studentId: string;
+  studentName: string;
+  status: AttendanceStatus;
+  notes?: string;
+  createdAt?: string;
+}
+
+export interface TeacherQuizQuestion {
+  id: string;
+  question?: string;
+  questionText?: string;
+  options: string[];
+  correctAnswer?: number;
+  correctAnswerIndex?: number;
+  points: number;
+  explanation?: string;
+}
+
+export interface TeacherQuiz {
+  id: string;
+  schoolId: string;
+  teacherId: string;
+  teacherName?: string;
+  gradeName: string;
+  classroomName: string;
+  subjectName: string;
+  title: string;
+  description?: string;
+  examDate: string; // YYYY-MM-DD
+  examTime?: string; // HH:MM
+  durationMinutes: number;
+  totalPoints: number;
+  questions: TeacherQuizQuestion[];
+  isPublished: boolean;
+  createdAt: string;
+}
+
+export type CommunicationTargetType =
+  | 'class_announcement'
+  | 'student_msg'
+  | 'parent_msg'
+  | 'homework_alert'
+  | 'quiz_alert';
+
+export interface TeacherCommunication {
+  id: string;
+  schoolId: string;
+  teacherId: string;
+  teacherName: string;
+  targetType: CommunicationTargetType;
+  gradeName: string;
+  classroomName: string;
+  targetId?: string; // studentId or parentId
+  targetName?: string;
+  title: string;
+  content: string;
+  isUrgent?: boolean;
+  createdAt: string;
+}
+
+export interface TeacherPermissions {
+  canAddStudent: boolean;
+  canEditStudent: boolean;
+  canManageSchedule: boolean;
+  canRecordAttendance: boolean;
+  canAddNotes: boolean;
+  canCreateHomework: boolean;
+  canCreateQuizzes: boolean;
+  canMessageParents: boolean;
 }

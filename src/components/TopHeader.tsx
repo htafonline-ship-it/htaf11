@@ -16,7 +16,8 @@ import {
   ShieldAlert,
   Crown,
   Bell,
-  ScanLine
+  ScanLine,
+  MapPin
 } from 'lucide-react';
 
 interface TopHeaderProps {
@@ -61,6 +62,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
     'school-mgmt': { label: 'إدارة المدرسة والإحصائيات', icon: <School className="w-4 h-4 text-cyan-400" /> },
     messaging: { label: 'المحادثات والتواصل المدرسي', icon: <MessageSquare className="w-4 h-4 text-rose-400" /> },
     counseling: { label: 'الإرشاد الطلابي والسرية', icon: <ShieldAlert className="w-4 h-4 text-indigo-400" /> },
+    'kharj-schools': { label: 'دليل مدارس ومراكز الخرج ودعوات الارتباط', icon: <MapPin className="w-4 h-4 text-emerald-400" /> },
     'platform-admin': { label: 'لوحة مدير المنصة (Platform Admin)', icon: <Crown className="w-4 h-4 text-amber-400" /> },
     super_admin: { label: 'لوحة مدير المنصة (Platform Admin)', icon: <Crown className="w-4 h-4 text-amber-400" /> }
   };
