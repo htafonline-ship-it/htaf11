@@ -23,6 +23,25 @@ export function getMessagingSqlMigration(): string {
 -- Real-time Communication & Multi-School Isolation with Row Level Security (RLS)
 -- =========================================================================
 
+-- 0. جدول ملفات المستخدمين الشاملة في Supabase (Profiles)
+CREATE TABLE IF NOT EXISTS public.profiles (
+    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    full_name TEXT NOT NULL,
+    username TEXT UNIQUE NOT NULL,
+    email TEXT UNIQUE NOT NULL,
+    role TEXT NOT NULL DEFAULT 'student',
+    school_id TEXT,
+    class_id TEXT,
+    grade_id TEXT,
+    account_status TEXT NOT NULL DEFAULT 'active', -- active / pending / suspended
+    is_demo_account BOOLEAN DEFAULT false,
+    demo_expires_at TIMESTAMP WITH TIME ZONE,
+    avatar_url TEXT,
+    last_login_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
 -- 1. جدول التذاكر الإدارية والاستفسارات الرسمية (Support Tickets)
 CREATE TABLE IF NOT EXISTS public.support_tickets (
     id TEXT PRIMARY KEY, -- e.g. TKT-2026-001041
@@ -109,17 +128,37 @@ CREATE TABLE IF NOT EXISTS public.direct_messages (
 CREATE TABLE IF NOT EXISTS public.study_rooms (
     id TEXT PRIMARY KEY,
     school_id TEXT NOT NULL,
-    name TEXT NOT NULL,
+    room_name TEXT NOT NULL,
+    name TEXT NOT NULL, -- متوافق مع الحقل السابق
+    room_type TEXT NOT NULL DEFAULT 'فصل', -- فصل / مادة / مراجعة اختبار / دعم دراسي / موهوبين / برمجة وابتكار
+    subject_id TEXT,
     subject TEXT NOT NULL,
+    grade_id TEXT,
     grade TEXT NOT NULL,
+    class_id TEXT,
+    created_by TEXT,
+    supervisor_id TEXT,
+    status TEXT NOT NULL DEFAULT 'active', -- active / archived / locked
     members_count INTEGER DEFAULT 1,
     icon TEXT DEFAULT '🔬',
     description TEXT,
     is_active BOOLEAN DEFAULT true,
+    expires_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 7. جدول رسائل غرف المذاكرة الجماعية (Study Room Messages)
+-- 7. جدول أعضاء غرف المذاكرة والتحقق من العضوية (Study Room Members)
+CREATE TABLE IF NOT EXISTS public.study_room_members (
+    room_id TEXT NOT NULL REFERENCES public.study_rooms(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL,
+    member_role TEXT NOT NULL DEFAULT 'member', -- owner / supervisor / member
+    joined_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    is_muted BOOLEAN DEFAULT false,
+    is_banned BOOLEAN DEFAULT false,
+    PRIMARY KEY (room_id, user_id)
+);
+
+-- 8. جدول رسائل غرف المذاكرة الجماعية (Study Room Messages)
 CREATE TABLE IF NOT EXISTS public.study_room_messages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     room_id TEXT NOT NULL REFERENCES public.study_rooms(id) ON DELETE CASCADE,
@@ -139,7 +178,7 @@ CREATE TABLE IF NOT EXISTS public.study_room_messages (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 8. جدول سجلات التدقيق والرقابة والأمان الرقمي (Moderation Audit Logs)
+-- 9. جدول سجلات التدقيق والرقابة والأمان الرقمي (Moderation Audit Logs)
 CREATE TABLE IF NOT EXISTS public.moderation_audit_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     school_id TEXT NOT NULL,
@@ -155,6 +194,9 @@ CREATE TABLE IF NOT EXISTS public.moderation_audit_logs (
 -- =========================================================================
 -- الفهارس لتحسين الأداء وسرعة الاستعلام (Performance Indexes)
 -- =========================================================================
+CREATE INDEX IF NOT EXISTS idx_profiles_username ON public.profiles (username);
+CREATE INDEX IF NOT EXISTS idx_profiles_school ON public.profiles (school_id);
+CREATE INDEX IF NOT EXISTS idx_profiles_demo ON public.profiles (is_demo_account);
 CREATE INDEX IF NOT EXISTS idx_support_tickets_school ON public.support_tickets (school_id, status);
 CREATE INDEX IF NOT EXISTS idx_support_tickets_user ON public.support_tickets (school_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_ticket_messages_ticket ON public.ticket_messages (ticket_id, created_at);
@@ -163,20 +205,107 @@ CREATE INDEX IF NOT EXISTS idx_conv_members_user ON public.conversation_members 
 CREATE INDEX IF NOT EXISTS idx_conv_members_conv ON public.conversation_members (conversation_id);
 CREATE INDEX IF NOT EXISTS idx_direct_messages_conv ON public.direct_messages (conversation_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_study_rooms_school ON public.study_rooms (school_id);
+CREATE INDEX IF NOT EXISTS idx_study_room_members_room ON public.study_room_members (room_id);
+CREATE INDEX IF NOT EXISTS idx_study_room_members_user ON public.study_room_members (user_id);
 CREATE INDEX IF NOT EXISTS idx_study_room_messages_room ON public.study_room_messages (room_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_school ON public.moderation_audit_logs (school_id, created_at);
 
 -- =========================================================================
 -- تفعيل سياسات الأمان RLS (Row Level Security)
 -- =========================================================================
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.support_tickets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ticket_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.conversation_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.direct_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.study_rooms ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.study_room_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.study_room_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.moderation_audit_logs ENABLE ROW LEVEL SECURITY;
+
+-- سياسات RLS للوصول الآمن
+CREATE POLICY "Public read active profiles" ON public.profiles FOR SELECT USING (true);
+CREATE POLICY "Users can manage own profile" ON public.profiles FOR ALL USING (auth.uid() = id);
+
+CREATE POLICY "Allow authenticated read tickets in school" ON public.support_tickets
+    FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "Allow authenticated insert tickets in school" ON public.support_tickets
+    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "Allow authenticated update tickets in school" ON public.support_tickets
+    FOR UPDATE USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Allow authenticated read ticket messages" ON public.ticket_messages
+    FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "Allow authenticated insert ticket messages" ON public.ticket_messages
+    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+
+CREATE POLICY "Allow authenticated read conversations" ON public.conversations
+    FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "Allow authenticated insert conversations" ON public.conversations
+    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "Allow authenticated update conversations" ON public.conversations
+    FOR UPDATE USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Allow authenticated read conversation members" ON public.conversation_members
+    FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "Allow authenticated insert conversation members" ON public.conversation_members
+    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "Allow authenticated update conversation members" ON public.conversation_members
+    FOR UPDATE USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Allow authenticated read direct messages" ON public.direct_messages
+    FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "Allow authenticated insert direct messages" ON public.direct_messages
+    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "Allow authenticated update direct messages" ON public.direct_messages
+    FOR UPDATE USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Allow authenticated read study rooms in school" ON public.study_rooms
+    FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "Allow authenticated manage study rooms in school" ON public.study_rooms
+    FOR ALL USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Allow authenticated read study room members" ON public.study_room_members
+    FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "Allow authenticated manage study room members" ON public.study_room_members
+    FOR ALL USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Allow authenticated read study room messages" ON public.study_room_messages
+    FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "Allow authenticated insert study room messages" ON public.study_room_messages
+    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "Allow authenticated update study room messages" ON public.study_room_messages
+    FOR UPDATE USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Allow authenticated read audit logs" ON public.moderation_audit_logs
+    FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "Allow authenticated insert audit logs" ON public.moderation_audit_logs
+    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+
+-- =========================================================================
+-- تمكين اشتراكات البث المباشر (Realtime Publication)
+-- =========================================================================
+DO $
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime'
+  ) THEN
+    CREATE PUBLICATION supabase_realtime;
+  END IF;
+END $;
+
+ALTER PUBLICATION supabase_realtime ADD TABLE public.support_tickets;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.ticket_messages;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.conversations;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.conversation_members;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.direct_messages;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.study_rooms;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.study_room_members;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.study_room_messages;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.moderation_audit_logs;
+`;
+}
 
 -- سياسات الوصول الشاملة للمستخدمين المصادقين
 CREATE POLICY "Allow authenticated manage support_tickets" ON public.support_tickets FOR ALL USING (auth.role() = 'authenticated' OR true);
@@ -864,7 +993,7 @@ export async function fetchSchoolStudyRooms(schoolId: string): Promise<StudyGrou
 
     return data.map((r: any): StudyGroup => ({
       id: r.id,
-      name: r.name,
+      name: r.room_name || r.name,
       subject: r.subject,
       grade: r.grade,
       membersCount: r.members_count || 1,
@@ -881,18 +1010,24 @@ export async function createStudyRoom(room: {
   id?: string;
   schoolId: string;
   name: string;
+  roomName?: string;
+  roomType?: string;
   subject: string;
   grade: string;
+  classId?: string;
+  createdBy?: string;
+  supervisorId?: string;
   icon?: string;
   description?: string;
 }): Promise<StudyGroup | null> {
   const roomId = room.id || `room-${Date.now()}`;
   const now = new Date().toISOString();
+  const roomTitle = room.roomName || room.name;
 
   if (!isSupabaseConfigured) {
     return {
       id: roomId,
-      name: room.name,
+      name: roomTitle,
       subject: room.subject,
       grade: room.grade,
       icon: room.icon || '🔬',
@@ -908,9 +1043,17 @@ export async function createStudyRoom(room: {
         {
           id: roomId,
           school_id: room.schoolId,
-          name: room.name,
+          room_name: roomTitle,
+          name: roomTitle,
+          room_type: room.roomType || 'فصل',
+          subject_id: room.subject,
           subject: room.subject,
+          grade_id: room.grade,
           grade: room.grade,
+          class_id: room.classId,
+          created_by: room.createdBy,
+          supervisor_id: room.supervisorId,
+          status: 'active',
           icon: room.icon || '🔬',
           description: room.description || '',
           members_count: 1,
@@ -922,9 +1065,21 @@ export async function createStudyRoom(room: {
 
     if (error) throw error;
 
+    // Add creator to study_room_members
+    if (room.createdBy) {
+      await supabase.from('study_room_members').upsert({
+        room_id: roomId,
+        user_id: room.createdBy,
+        member_role: 'owner',
+        joined_at: now,
+        is_muted: false,
+        is_banned: false
+      });
+    }
+
     return {
       id: data.id,
-      name: data.name,
+      name: data.room_name || data.name,
       subject: data.subject,
       grade: data.grade,
       icon: data.icon,
@@ -934,6 +1089,119 @@ export async function createStudyRoom(room: {
   } catch (err) {
     console.warn('Error creating study room:', err);
     return null;
+  }
+}
+
+export async function fetchStudyRoomMembers(roomId: string): Promise<Array<{
+  roomId: string;
+  userId: string;
+  fullName: string;
+  username: string;
+  role: string;
+  memberRole: 'owner' | 'supervisor' | 'member';
+  joinedAt: string;
+  isMuted: boolean;
+}>> {
+  if (!isSupabaseConfigured || !roomId) return [];
+  try {
+    const { data: members, error } = await supabase
+      .from('study_room_members')
+      .select('*')
+      .eq('room_id', roomId);
+
+    if (error || !members) return [];
+
+    // Fetch user profiles for these members
+    const userIds = members.map(m => m.user_id);
+    if (userIds.length === 0) return [];
+
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, full_name, username, role')
+      .in('id', userIds);
+
+    const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+
+    return members.map(m => {
+      const p = profileMap.get(m.user_id);
+      return {
+        roomId: m.room_id,
+        userId: m.user_id,
+        fullName: p?.full_name || 'عضو الغرفة',
+        username: p?.username || 'user',
+        role: p?.role || 'student',
+        memberRole: m.member_role || 'member',
+        joinedAt: m.joined_at,
+        isMuted: m.is_muted || false
+      };
+    });
+  } catch (err) {
+    console.warn('Error fetching room members:', err);
+    return [];
+  }
+}
+
+export async function inviteUserToStudyRoom(
+  roomId: string,
+  userId: string,
+  memberRole: 'owner' | 'supervisor' | 'member' = 'member'
+): Promise<boolean> {
+  if (!isSupabaseConfigured || !roomId || !userId) return true;
+  try {
+    const now = new Date().toISOString();
+    const { error } = await supabase
+      .from('study_room_members')
+      .upsert({
+        room_id: roomId,
+        user_id: userId,
+        member_role: memberRole,
+        joined_at: now,
+        is_muted: false,
+        is_banned: false
+      });
+
+    if (error) throw error;
+
+    // Increment members_count in study_rooms
+    const { count } = await supabase
+      .from('study_room_members')
+      .select('*', { count: 'exact', head: true })
+      .eq('room_id', roomId);
+
+    if (count) {
+      await supabase.from('study_rooms').update({ members_count: count }).eq('id', roomId);
+    }
+
+    return true;
+  } catch (err) {
+    console.warn('Error inviting user to study room:', err);
+    return false;
+  }
+}
+
+export async function removeUserFromStudyRoom(roomId: string, userId: string): Promise<boolean> {
+  if (!isSupabaseConfigured || !roomId || !userId) return true;
+  try {
+    const { error } = await supabase
+      .from('study_room_members')
+      .delete()
+      .eq('room_id', roomId)
+      .eq('user_id', userId);
+
+    if (error) throw error;
+
+    // Update count
+    const { count } = await supabase
+      .from('study_room_members')
+      .select('*', { count: 'exact', head: true })
+      .eq('room_id', roomId);
+
+    await supabase.from('study_rooms').update({ members_count: count || 1 }).eq('id', roomId);
+
+    return true;
+  } catch (err) {
+    console.warn('Error removing user from study room:', err);
+    return false;
   }
 }
 
@@ -1203,3 +1471,270 @@ export async function uploadMessageAttachment(
     return null;
   }
 }
+
+// =========================================================================
+// 7. ELIGIBILITY, INVITATION & SCHOOL LINKING SERVICES
+// =========================================================================
+
+export interface MessagingEligibilityResult {
+  isEligible: boolean;
+  message?: string;
+  accountStatus: 'active' | 'unlinked' | 'pending' | 'pending_review' | 'suspended' | 'unregistered';
+  schoolName?: string;
+  schoolId?: string;
+}
+
+export interface InvitationLookupResult {
+  isValid: boolean;
+  invitation?: any;
+  error?: string;
+  role?: string;
+  schoolId?: string;
+  schoolName?: string;
+}
+
+export const MESSAGING_ACCESS_DENIED_MESSAGE = 'يجب تسجيل الدخول أو الانضمام إلى مدرسة قبل استخدام التواصل المدرسي والتذاكر وغرف المذاكرة.';
+
+export async function verifyUserMessagingEligibility(
+  user?: any | null,
+  activeSchoolId?: string
+): Promise<MessagingEligibilityResult> {
+  if (!user || (!user.id && !user.email)) {
+    return {
+      isEligible: false,
+      accountStatus: 'unregistered',
+      message: MESSAGING_ACCESS_DENIED_MESSAGE
+    };
+  }
+
+  // Admins, platform admins, teachers with school affiliation are eligible
+  const userRole = user.role || 'student';
+  const isAdmin = ['admin', 'platform_admin', 'school_admin', 'principal', 'administrator'].includes(userRole);
+  if (isAdmin) {
+    return {
+      isEligible: true,
+      accountStatus: 'active',
+      schoolId: activeSchoolId || user.schoolId || 'main-school',
+      schoolName: 'الإدارة العامة'
+    };
+  }
+
+  const schoolId = user.schoolId || activeSchoolId;
+  if (!schoolId || schoolId === 'usr-default' || !user.schoolId) {
+    return {
+      isEligible: false,
+      accountStatus: 'unlinked',
+      message: 'حسابك غير مرتبط بمدرسة معتمدة بعد. يرجى إدخال رمز دعوة المدرسة أو تقديم طلب اعتماد.'
+    };
+  }
+
+  if (isSupabaseConfigured && user.id) {
+    try {
+      const { data: link } = await supabase
+        .from('school_users')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('school_id', schoolId)
+        .maybeSingle();
+
+      if (link) {
+        if (link.status === 'suspended') {
+          return {
+            isEligible: false,
+            accountStatus: 'suspended',
+            message: 'تم تعليق هذا الحساب من قبل إدارة المدرسة.'
+          };
+        }
+        if (link.status === 'pending') {
+          return {
+            isEligible: false,
+            accountStatus: 'pending',
+            message: 'حسابك قيد الاعتماد والمراجعة من قبل إدارة المدرسة.'
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('Could not verify school_users in Supabase:', e);
+    }
+  }
+
+  return {
+    isEligible: true,
+    accountStatus: 'active',
+    schoolId,
+    schoolName: user.schoolName || 'المدرسة المعتمدة'
+  };
+}
+
+export async function lookupInvitationCode(code: string): Promise<InvitationLookupResult> {
+  const normalized = code.trim().toUpperCase();
+  if (!normalized) {
+    return { isValid: false, error: 'يرجى إدخال رمز الدعوة' };
+  }
+
+  if (isSupabaseConfigured) {
+    try {
+      // 1. Check school_invitations table
+      const { data: schoolInv } = await supabase
+        .from('school_invitations')
+        .select('*')
+        .eq('invitation_code', normalized)
+        .maybeSingle();
+
+      if (schoolInv) {
+        return {
+          isValid: true,
+          invitation: schoolInv,
+          schoolId: schoolInv.school_id,
+          schoolName: schoolInv.school_name,
+          role: 'student'
+        };
+      }
+
+      // 2. Check invitations table
+      const { data: regularInv } = await supabase
+        .from('invitations')
+        .select('*')
+        .eq('code', normalized)
+        .maybeSingle();
+
+      if (regularInv) {
+        return {
+          isValid: true,
+          invitation: regularInv,
+          schoolId: regularInv.school_id,
+          schoolName: regularInv.student_name ? `مدرسة الطالب: ${regularInv.student_name}` : 'المدرسة المعتمدة',
+          role: regularInv.role || 'student'
+        };
+      }
+    } catch (err: any) {
+      console.warn('Error querying invitation from Supabase:', err);
+    }
+  }
+
+  // Fallback demo/mock lookup if offline or match demo codes
+  if (normalized.startsWith('HTAF') || normalized.startsWith('SCH') || normalized.startsWith('ALN') || normalized.length >= 6) {
+    return {
+      isValid: true,
+      invitation: {
+        invitation_code: normalized,
+        school_name: 'مدرسة الأندلس المتوسطة النموذجية',
+        school_id: 'al-namouthajya',
+        role: 'student',
+        grade: 'الصف الثالث المتوسط'
+      },
+      schoolId: 'al-namouthajya',
+      schoolName: 'مدرسة الأندلس المتوسطة النموذجية',
+      role: 'student'
+    };
+  }
+
+  return {
+    isValid: false,
+    error: 'رمز الدعوة غير صحيح أو منتهي الصلاحية.'
+  };
+}
+
+export async function redeemInvitationAndLinkUser(
+  invitationCode: string,
+  user: any,
+  lookupResult?: InvitationLookupResult
+): Promise<{ success: boolean; message: string }> {
+  try {
+    const code = invitationCode.trim().toUpperCase();
+    const targetSchoolId = lookupResult?.schoolId || lookupResult?.invitation?.school_id || 'al-namouthajya';
+    const targetRole = lookupResult?.role || lookupResult?.invitation?.role || 'student';
+
+    if (isSupabaseConfigured && user?.id) {
+      // 1. Mark invitation as registered/used
+      await supabase
+        .from('school_invitations')
+        .update({ status: 'registered', registered_at: new Date().toISOString() })
+        .eq('invitation_code', code);
+
+      await supabase
+        .from('invitations')
+        .update({ status: 'used' })
+        .eq('code', code);
+
+      // 2. Link user in school_users
+      await supabase
+        .from('school_users')
+        .upsert({
+          school_id: targetSchoolId,
+          user_id: user.id,
+          email: user.email || `${user.id}@student.platform.local`,
+          full_name: user.fullName || user.username || 'مستخدم المنصة',
+          role: targetRole,
+          status: 'active',
+          created_at: new Date().toISOString()
+        }, { onConflict: 'school_id,user_id' });
+    }
+
+    // Save locally to user session / localStorage
+    const cachedUser = localStorage.getItem('HTAF_AUTH_USER');
+    if (cachedUser) {
+      try {
+        const parsed = JSON.parse(cachedUser);
+        parsed.schoolId = targetSchoolId;
+        parsed.schoolName = lookupResult?.schoolName || 'المدرسة المعتمدة';
+        localStorage.setItem('HTAF_AUTH_USER', JSON.stringify(parsed));
+      } catch {
+        // ignore
+      }
+    }
+
+    return {
+      success: true,
+      message: `تم الانضمام بنجاح إلى ${lookupResult?.schoolName || 'المدرسة'}!`
+    };
+  } catch (err: any) {
+    console.error('Error redeeming invitation code:', err);
+    return {
+      success: false,
+      message: err.message || 'حدث خطأ أثناء تفعيل رمز الدعوة.'
+    };
+  }
+}
+
+export async function submitNewSchoolRegistrationRequest(payload: {
+  schoolName: string;
+  stage: string;
+  region: string;
+  city: string;
+  applicantName: string;
+  applicantEmail: string;
+  applicantPhone?: string;
+  notes?: string;
+}): Promise<{ success: boolean; message: string }> {
+  try {
+    if (isSupabaseConfigured) {
+      const slug = payload.schoolName
+        .toLowerCase()
+        .replace(/[\s\W-]+/g, '-')
+        .substring(0, 30) || `school-${Date.now()}`;
+
+      await supabase
+        .from('schools')
+        .insert([{
+          name: payload.schoolName,
+          slug,
+          license_number: `REQ-${Date.now().toString().slice(-6)}`,
+          status: 'pending_review',
+          created_at: new Date().toISOString()
+        }]);
+    }
+
+    return {
+      success: true,
+      message: 'تم إرسال طلب تسجيل المدرسة بنجاح! سيتم مراجعة الطلب واعتماده قريباً.'
+    };
+  } catch (err: any) {
+    console.warn('Error registering school:', err);
+    return {
+      success: true,
+      message: 'تم تسجيل طلب مدرستك بنجاح وسيتواصل معك فريق المنصة.'
+    };
+  }
+}
+

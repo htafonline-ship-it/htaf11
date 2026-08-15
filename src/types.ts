@@ -2,7 +2,7 @@ export type UserRole = 'student' | 'teacher' | 'parent' | 'counselor' | 'vice_pr
 
 export interface AuthUser {
   id: string;
-  username: string; // e.g. national ID '1007363904' or email
+  username: string; // e.g. 'student.demo1' or 'teacher.demo1'
   fullName: string;
   email?: string;
   role: UserRole;
@@ -10,8 +10,83 @@ export interface AuthUser {
   loginMethod: 'google' | 'credentials';
   schoolId?: string;
   schoolName?: string;
+  classId?: string;
+  gradeId?: string;
+  accountStatus?: 'active' | 'pending' | 'suspended';
+  isDemoAccount?: boolean;
+  demoExpiresAt?: string;
   nationalId?: string;
   badge?: string;
+  createdAt?: string;
+}
+
+export interface UserProfile {
+  id: string;
+  fullName: string;
+  username: string;
+  email: string;
+  role: UserRole;
+  schoolId?: string;
+  schoolName?: string;
+  classId?: string;
+  gradeId?: string;
+  accountStatus: 'active' | 'pending' | 'suspended';
+  isDemoAccount: boolean;
+  demoExpiresAt?: string;
+  avatarUrl?: string;
+  lastLoginAt?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface DemoAccountCreatePayload {
+  fullName: string;
+  username: string;
+  email: string;
+  temporaryPassword?: string;
+  role: UserRole;
+  schoolId: string;
+  gradeId?: string;
+  classId?: string;
+  expiresAt: string;
+  permissions?: string[];
+}
+
+export type StudyRoomType = 'فصل' | 'مادة' | 'مراجعة اختبار' | 'دعم دراسي' | 'موهوبين' | 'برمجة وابتكار';
+
+export interface StudyRoomMember {
+  roomId: string;
+  userId: string;
+  fullName?: string;
+  username?: string;
+  memberRole: 'owner' | 'supervisor' | 'member';
+  joinedAt: string;
+  isMuted: boolean;
+  isBanned: boolean;
+  avatarUrl?: string;
+}
+
+export interface StudyRoomItem {
+  id: string;
+  schoolId: string;
+  roomName: string;
+  roomType: StudyRoomType;
+  subjectId?: string;
+  subject?: string;
+  gradeId?: string;
+  grade?: string;
+  classId?: string;
+  createdBy: string;
+  createdByName?: string;
+  supervisorId?: string;
+  supervisorName?: string;
+  status: 'active' | 'archived' | 'locked';
+  membersCount: number;
+  icon?: string;
+  description?: string;
+  createdAt: string;
+  expiresAt?: string;
+  members?: StudyRoomMember[];
 }
 
 export type EducationalStage = 'primary' | 'middle' | 'secondary' | 'kindergarten' | 'all';
@@ -684,3 +759,53 @@ export interface TeacherPermissions {
   canCreateQuizzes: boolean;
   canMessageParents: boolean;
 }
+
+export interface UserProfile {
+  id: string;
+  fullName: string;
+  username: string;
+  email: string;
+  role: UserRole;
+  schoolId: string;
+  classId?: string;
+  accountStatus: 'active' | 'disabled' | 'pending';
+  isDemoAccount: boolean;
+  expiresAt?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface StudyRoomItem {
+  id: string;
+  schoolId: string;
+  name: string;
+  subject: string;
+  grade: string;
+  description: string;
+  icon: string;
+  createdBy?: string;
+  membersCount: number;
+  createdAt?: string;
+}
+
+export interface StudyRoomMember {
+  id: string;
+  roomId: string;
+  userId: string;
+  userName?: string;
+  userRole?: UserRole;
+  userAvatar?: string;
+  roleInRoom: 'admin' | 'moderator' | 'member';
+  joinedAt: string;
+}
+
+export interface DemoAccountCreatePayload {
+  fullName: string;
+  username: string;
+  role: UserRole;
+  schoolId: string;
+  classId?: string;
+  expiresDays?: number;
+  password?: string;
+}
+

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AuthUser, UserRole } from '../types';
-import { signInWithGoogle, signInWithEmail, isSupabaseConfigured } from '../lib/supabase';
+import { signInWithGoogle, signInWithUsernameOrEmail, isSupabaseConfigured } from '../lib/supabase';
 import { BrandLogo } from './BrandLogo';
 import {
   X,
@@ -16,7 +16,8 @@ import {
   Crown,
   GraduationCap,
   UserCheck,
-  Database
+  Database,
+  Check
 } from 'lucide-react';
 
 interface LoginModalProps {
@@ -32,7 +33,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   onLoginSuccess,
   onOpenSupabaseConfig
 }) => {
-  const [activeTab, setActiveTab] = useState<'google' | 'credentials'>('google');
+  const [activeTab, setActiveTab] = useState<'credentials' | 'google'>('credentials');
 
   // Credentials State
   const [username, setUsername] = useState('');
@@ -87,11 +88,11 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     setErrorMessage('');
 
     if (!username.trim()) {
-      setErrorMessage('يرجى إدخال البريد الإلكتروني أو اسم المستخدم');
+      setErrorMessage('يرجى إدخال اسم المستخدم أو البريد الإلكتروني');
       return;
     }
     if (!password.trim()) {
-      setErrorMessage('يرجى إدخال الرقم السري / كلمة المرور');
+      setErrorMessage('يرجى إدخال كلمة المرور');
       return;
     }
 
@@ -101,7 +102,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       const cleanUser = username.trim();
       const cleanPass = password.trim();
 
-      // Check for special Admin Credentials: Username '1007363904' or 'admin' or 'htaf.online@gmail.com'
+      // Check for Super Admin Credentials: Username '1007363904' or 'admin' or 'htaf.online@gmail.com'
       const isPlatformAdminMatch = 
         (cleanUser === '1007363904' && (cleanPass === '139213' || cleanPass.length >= 3)) ||
         (cleanUser.toLowerCase() === 'admin' && (cleanPass === '139213' || cleanPass === 'admin' || cleanPass === 'admin123')) ||
@@ -124,36 +125,26 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         return;
       }
 
-      if (isSupabaseConfigured && username.includes('@')) {
-        const { user } = await signInWithEmail(username.trim(), password.trim());
-        if (user) {
-          const isUserAdmin = user.email === 'htaf.online@gmail.com' || user.email?.startsWith('admin.');
-          const authUser: AuthUser = {
-            id: user.id,
-            username: user.email?.split('@')[0] || 'user',
-            fullName: user.user_metadata?.full_name || user.email || 'مستخدم',
-            email: user.email || '',
-            role: isUserAdmin ? 'platform_admin' : selectedRole,
-            avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
-            loginMethod: 'credentials',
-            badge: isUserAdmin ? 'مدير المنصة الرئيسي (Super Admin)' : 'حساب Supabase موثق'
-          };
-          onLoginSuccess(authUser);
-          onClose();
-          return;
-        }
+      // Supabase & Real Profile Auth
+      const { authUser } = await signInWithUsernameOrEmail(cleanUser, cleanPass);
+      if (authUser) {
+        onLoginSuccess(authUser);
+        onClose();
+        return;
       }
 
-      // Local fallback for quick user access
+      // Local fallback for quick user access if needed
+      const isDemo = cleanUser.startsWith('student.') || cleanUser.startsWith('teacher.') || cleanUser.startsWith('parent.') || cleanUser.startsWith('counselor.');
       const newUser: AuthUser = {
         id: `usr-${Date.now()}`,
         username: cleanUser,
         fullName: `مستخدم (${cleanUser})`,
-        email: cleanUser.includes('@') ? cleanUser : `${cleanUser}@school.edu.sa`,
+        email: cleanUser.includes('@') ? cleanUser : `${cleanUser}@htaf.online`,
         role: selectedRole,
         avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
         loginMethod: 'credentials',
-        badge: 'حساب موثق'
+        isDemoAccount: isDemo,
+        badge: isDemo ? 'حساب تجريبي نشط' : 'حساب موثق'
       };
 
       onLoginSuccess(newUser);
@@ -164,6 +155,13 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Quick select helper for testing demo accounts
+  const handleQuickDemoSelect = (demoUsername: string, defaultPass = 'DemoPass2026!') => {
+    setUsername(demoUsername);
+    setPassword(defaultPass);
+    setErrorMessage('');
   };
 
   return (
@@ -181,14 +179,26 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           <div className="flex items-center gap-3">
             <BrandLogo size="md" glow={true} />
             <div>
-              <h3 className="text-lg font-black tracking-tight">الدخول التفاعلي للمنصة</h3>
-              <p className="text-xs text-slate-400 font-medium">نظام التوثيق الموحد Supabase Auth + Google</p>
+              <h3 className="text-lg font-black tracking-tight">تسجيل الدخول للمنصة</h3>
+              <p className="text-xs text-slate-400 font-medium">اسم المستخدم / Google / حسابات التجربة المعملية</p>
             </div>
           </div>
         </div>
 
         {/* Auth Method Tabs */}
         <div className="flex border-b border-slate-200 bg-slate-50 p-1.5 gap-1">
+          <button
+            onClick={() => setActiveTab('credentials')}
+            className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${
+              activeTab === 'credentials'
+                ? 'bg-white text-slate-800 shadow-sm border border-slate-200'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <KeyRound className="w-4 h-4 text-emerald-600" />
+            <span>اسم المستخدم وكلمة المرور</span>
+          </button>
+
           <button
             onClick={() => setActiveTab('google')}
             className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${
@@ -215,25 +225,138 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
               />
             </svg>
-            <span>Google Sign-In الأساسي</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('credentials')}
-            className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${
-              activeTab === 'credentials'
-                ? 'bg-white text-slate-800 shadow-sm border border-slate-200'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <KeyRound className="w-4 h-4 text-slate-600" />
-            <span>البريد وكلمة المرور</span>
+            <span>Google Sign-In</span>
           </button>
         </div>
 
         {/* Form Body */}
         <div className="p-6">
-          {/* TAB 1: GOOGLE SIGN IN */}
+          {/* TAB 1: CREDENTIALS LOGIN */}
+          {activeTab === 'credentials' && (
+            <form onSubmit={handleCredentialsSubmit} className="space-y-4">
+              {errorMessage && (
+                <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs p-3 rounded-xl flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                  <span>{errorMessage}</span>
+                </div>
+              )}
+
+              {/* Quick Demo Accounts Selection */}
+              <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                    <span>حسابات التجربة السريعة (Demo):</span>
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-mono">@htaf.online</span>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleQuickDemoSelect('student.demo1')}
+                    className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:border-emerald-500 hover:text-emerald-700 text-[11px] font-bold text-right flex items-center justify-between transition"
+                  >
+                    <span>🎓 طالب (student.demo1)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickDemoSelect('teacher.demo1')}
+                    className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:border-emerald-500 hover:text-emerald-700 text-[11px] font-bold text-right flex items-center justify-between transition"
+                  >
+                    <span>👨‍🏫 معلم (teacher.demo1)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickDemoSelect('parent.demo1')}
+                    className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:border-emerald-500 hover:text-emerald-700 text-[11px] font-bold text-right flex items-center justify-between transition"
+                  >
+                    <span>👨‍👩‍👧 ولي أمر (parent.demo1)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickDemoSelect('counselor.demo1')}
+                    className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:border-emerald-500 hover:text-emerald-700 text-[11px] font-bold text-right flex items-center justify-between transition"
+                  >
+                    <span>🩺 موجه (counselor.demo1)</span>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  اسم المستخدم أو البريد الإلكتروني
+                </label>
+                <div className="relative">
+                  <User className="w-4 h-4 text-slate-400 absolute right-3 top-3" />
+                  <input
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="student.demo1 أو teacher.demo1 أو بريدك الإلكتروني"
+                    className="w-full pr-10 pl-3 py-2.5 text-xs rounded-xl border border-slate-200 focus:border-emerald-500 outline-none transition font-semibold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">كلمة المرور</label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute right-3 top-3" />
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="أدخل كلمة المرور"
+                    className="w-full pr-10 pl-3 py-2.5 text-xs rounded-xl border border-slate-200 focus:border-emerald-500 outline-none transition font-semibold"
+                  />
+                </div>
+              </div>
+
+              {/* Auto Admin Indicator vs Role Selection */}
+              {(() => {
+                const u = username.trim().toLowerCase();
+                const isAdminTyped = u === '1007363904' || u === 'admin' || u === 'htaf.online@gmail.com' || u.includes('admin.1007363904');
+                
+                if (isAdminTyped) {
+                  return (
+                    <div className="bg-gradient-to-r from-amber-500/10 via-amber-400/10 to-yellow-500/10 border border-amber-500/30 rounded-xl p-3.5 flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-600 flex items-center justify-center shrink-0 border border-amber-500/30">
+                        <Crown className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-black text-amber-900 flex items-center gap-1.5">
+                          <span>حساب مدير المنصة الرئيسي (Super Admin)</span>
+                          <span className="text-[10px] bg-amber-500 text-slate-950 font-black px-1.5 py-0.2 rounded-full">توجيه مباشر</span>
+                        </div>
+                        <p className="text-[11px] text-amber-800/80 mt-0.5 font-medium">
+                          سيتم تحويلك فورياً ومباشرة إلى لوحة تحكم المنصة والمدارس بدون اختيار دور.
+                        </p>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return null;
+              })()}
+
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-3 rounded-xl shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 transition"
+              >
+                {isLoading ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <span>تسجيل الدخول</span>
+                    <ArrowRight className="w-4 h-4 rotate-180" />
+                  </>
+                )}
+              </button>
+            </form>
+          )}
+
+          {/* TAB 2: GOOGLE SIGN IN */}
           {activeTab === 'google' && (
             <div className="space-y-4">
               <div className="text-center p-4 bg-emerald-50/60 border border-emerald-100 rounded-2xl">
@@ -333,105 +456,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({
               </button>
             </div>
           )}
-
-          {/* TAB 2: CREDENTIALS LOGIN */}
-          {activeTab === 'credentials' && (
-            <form onSubmit={handleCredentialsSubmit} className="space-y-4">
-              {errorMessage && (
-                <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs p-3 rounded-xl flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-                  <span>{errorMessage}</span>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  البريد الإلكتروني / اسم المستخدم
-                </label>
-                <div className="relative">
-                  <User className="w-4 h-4 text-slate-400 absolute right-3 top-3" />
-                  <input
-                    type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    placeholder="رقم الهوية الوطنية / اسم المستخدم / البريد"
-                    className="w-full pr-10 pl-3 py-2.5 text-xs rounded-xl border border-slate-200 focus:border-emerald-500 outline-none transition font-semibold"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">كلمة المرور</label>
-                <div className="relative">
-                  <Lock className="w-4 h-4 text-slate-400 absolute right-3 top-3" />
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="أدخل كلمة المرور"
-                    className="w-full pr-10 pl-3 py-2.5 text-xs rounded-xl border border-slate-200 focus:border-emerald-500 outline-none transition font-semibold"
-                  />
-                </div>
-              </div>
-
-              {/* Auto Admin Indicator vs Role Selection */}
-              {(() => {
-                const u = username.trim().toLowerCase();
-                const isAdminTyped = u === '1007363904' || u === 'admin' || u === 'htaf.online@gmail.com' || u.includes('admin.1007363904');
-                
-                if (isAdminTyped) {
-                  return (
-                    <div className="bg-gradient-to-r from-amber-500/10 via-amber-400/10 to-yellow-500/10 border border-amber-500/30 rounded-xl p-3.5 flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-600 flex items-center justify-center shrink-0 border border-amber-500/30">
-                        <Crown className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <div className="text-xs font-black text-amber-900 flex items-center gap-1.5">
-                          <span>حساب مدير المنصة الرئيسي (Super Admin)</span>
-                          <span className="text-[10px] bg-amber-500 text-slate-950 font-black px-1.5 py-0.2 rounded-full">توجيه مباشر</span>
-                        </div>
-                        <p className="text-[11px] text-amber-800/80 mt-0.5 font-medium">
-                          سيتم تحويلك فورياً ومباشرة إلى لوحة تحكم المنصة والمدارس بدون اختيار دور.
-                        </p>
-                      </div>
-                    </div>
-                  );
-                }
-
-                return (
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">الدور المطلوب:</label>
-                    <select
-                      value={selectedRole}
-                      onChange={(e) => setSelectedRole(e.target.value as UserRole)}
-                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white font-bold text-slate-800 focus:border-emerald-500 outline-none"
-                    >
-                      <option value="teacher">👨‍🏫 معلم الفصل (Teacher)</option>
-                      <option value="student">🎓 طالب (Student)</option>
-                      <option value="school_admin">🏫 مدير المدرسة (School Principal)</option>
-                      <option value="parent">👨‍👩‍👧 ولي أمر (Parent)</option>
-                      <option value="counselor">🩺 المرشد الطلابي (Counselor)</option>
-                    </select>
-                  </div>
-                );
-              })()}
-
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-3 rounded-xl shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 transition"
-              >
-                {isLoading ? (
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <>
-                    <span>تسجيل الدخول</span>
-                    <ArrowRight className="w-4 h-4 rotate-180" />
-                  </>
-                )}
-              </button>
-            </form>
-          )}
         </div>
 
         {/* Modal Footer */}
@@ -439,7 +463,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           <span className="font-semibold">نظام التوثيق والتحقق الموحد للمنصة</span>
           <span className="text-emerald-700 font-extrabold flex items-center gap-1">
             <ShieldCheck className="w-4 h-4" />
-            <span>تسجيل آمن ومحمي</span>
+            <span>تسجيل آمن ومحمي بـ Supabase</span>
           </span>
         </div>
       </div>

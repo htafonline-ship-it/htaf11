@@ -116,6 +116,510 @@ export async function getCurrentSupabaseUser() {
 }
 
 // -------------------------------------------------------------
+// USER PROFILES & AUTHENTICATION WITH SUPABASE
+// -------------------------------------------------------------
+
+export interface DbProfile {
+  id: string;
+  full_name: string;
+  username: string;
+  email: string;
+  role: string;
+  school_id?: string;
+  class_id?: string;
+  grade_id?: string;
+  account_status: 'active' | 'pending' | 'suspended';
+  is_demo_account: boolean;
+  demo_expires_at?: string;
+  avatar_url?: string;
+  last_login_at?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+export async function fetchUserProfile(userId: string): Promise<DbProfile | null> {
+  if (!isSupabaseConfigured || !userId) return null;
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (error || !data) return null;
+    return data;
+  } catch (err) {
+    console.warn('Error fetching profile from Supabase:', err);
+    return null;
+  }
+}
+
+export async function fetchUserProfileByUsername(username: string): Promise<DbProfile | null> {
+  if (!isSupabaseConfigured || !username) return null;
+  try {
+    const clean = username.trim().toLowerCase();
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .or(`username.eq.${clean},email.eq.${clean}`)
+      .maybeSingle();
+
+    if (error || !data) return null;
+    return data;
+  } catch (err) {
+    console.warn('Error fetching profile by username:', err);
+    return null;
+  }
+}
+
+export async function upsertUserProfile(profile: {
+  id: string;
+  full_name: string;
+  username: string;
+  email: string;
+  role: string;
+  school_id?: string;
+  class_id?: string;
+  grade_id?: string;
+  account_status?: 'active' | 'pending' | 'suspended';
+  is_demo_account?: boolean;
+  demo_expires_at?: string;
+  avatar_url?: string;
+}): Promise<DbProfile | null> {
+  if (!isSupabaseConfigured) return null;
+  try {
+    const payload = {
+      ...profile,
+      account_status: profile.account_status || 'active',
+      is_demo_account: profile.is_demo_account ?? false,
+      updated_at: new Date().toISOString()
+    };
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .upsert(payload, { onConflict: 'id' })
+      .select()
+      .single();
+
+    if (error) {
+      console.warn('Error upserting profile in Supabase:', error.message);
+      return null;
+    }
+    return data;
+  } catch (err) {
+    console.warn('Exception upserting profile:', err);
+    return null;
+  }
+}
+
+/**
+ * Sign in using Username or Email with safe resolution against Supabase Auth.
+ * Supports domains like @htaf.online and user-defined username aliases.
+ */
+export async function signInWithUsernameOrEmail(
+  identifier: string,
+  pass: string
+): Promise<{ authUser: any; rawUser: any }> {
+  const clean = identifier.trim();
+  if (!clean) throw new Error('يرجى إدخال اسم المستخدم أو البريد الإلكتروني.');
+  if (!pass) throw new Error('يرجى إدخال كلمة المرور.');
+
+  let targetEmail = clean.toLowerCase();
+
+  if (isSupabaseConfigured) {
+    // 1. If user entered username without @, look up in profiles table first
+    if (!clean.includes('@')) {
+      const profile = await fetchUserProfileByUsername(clean);
+      if (profile && profile.email) {
+        targetEmail = profile.email;
+      } else {
+        // Fallback standard domain alias: username@htaf.online
+        targetEmail = `${clean.toLowerCase()}@htaf.online`;
+      }
+    }
+
+    // 2. Perform Supabase Auth Sign In
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: targetEmail,
+      password: pass,
+    });
+
+    if (error) {
+      // If user does not exist in Auth but exists in demo preset or is demo login, throw clear message
+      throw new Error(error.message || 'بيانات الدخول غير صحيحة.');
+    }
+
+    const authUser = data.user;
+    if (!authUser) throw new Error('تعذر إتمام عملية تسجيل الدخول.');
+
+    // 3. Fetch linked profile
+    let profile = await fetchUserProfile(authUser.id);
+
+    if (!profile) {
+      // Auto-create profile if missing
+      const derivedUsername = authUser.user_metadata?.username || targetEmail.split('@')[0] || `user_${authUser.id.slice(0, 6)}`;
+      const fullName = authUser.user_metadata?.full_name || derivedUsername;
+      const role = authUser.user_metadata?.role || (targetEmail.includes('admin') ? 'platform_admin' : 'student');
+      const isDemo = Boolean(authUser.user_metadata?.is_demo_account);
+
+      profile = await upsertUserProfile({
+        id: authUser.id,
+        full_name: fullName,
+        username: derivedUsername,
+        email: targetEmail,
+        role,
+        is_demo_account: isDemo,
+        account_status: 'active'
+      });
+    }
+
+    // 4. Verify Account Status
+    if (profile?.account_status === 'suspended') {
+      await signOutSupabase();
+      throw new Error('تم تعطيل هذا الحساب من قبل إدارة المنصة. يرجى التواصل مع الدعم الفني.');
+    }
+
+    // 5. Verify Demo Expiration
+    if (profile?.is_demo_account && profile.demo_expires_at) {
+      const expiry = new Date(profile.demo_expires_at);
+      if (expiry.getTime() < Date.now()) {
+        await signOutSupabase();
+        throw new Error('انتهت فترة صلاحية هذا الحساب التجريبي. يرجى التواصل مع إدارة المنصة لتمديد الصلاحية.');
+      }
+    }
+
+    // 6. Update last login
+    if (profile?.id) {
+      supabase.from('profiles').update({ last_login_at: new Date().toISOString() }).eq('id', profile.id).then();
+    }
+
+    return {
+      authUser: {
+        id: authUser.id,
+        username: profile?.username || targetEmail.split('@')[0],
+        fullName: profile?.full_name || authUser.user_metadata?.full_name || targetEmail.split('@')[0],
+        email: targetEmail,
+        role: (profile?.role || authUser.user_metadata?.role || 'student'),
+        schoolId: profile?.school_id || 'al-namouthajya',
+        classId: profile?.class_id,
+        gradeId: profile?.grade_id,
+        accountStatus: profile?.account_status || 'active',
+        isDemoAccount: profile?.is_demo_account || false,
+        demoExpiresAt: profile?.demo_expires_at,
+        loginMethod: 'credentials',
+        badge: profile?.is_demo_account ? 'حساب تجريبي معتمد' : 'حساب موثق بـ Supabase'
+      },
+      rawUser: authUser
+    };
+  }
+
+  // Offline / Demo fallback when Supabase is not yet configured
+  const demoRole = clean.includes('teacher') ? 'teacher' : clean.includes('parent') ? 'parent' : clean.includes('counselor') ? 'counselor' : clean.includes('admin') ? 'platform_admin' : 'student';
+  const isDemo = clean.includes('demo') || clean.startsWith('student.') || clean.startsWith('teacher.');
+  return {
+    authUser: {
+      id: `usr-demo-${clean}`,
+      username: clean,
+      fullName: `مستخدم (${clean})`,
+      email: clean.includes('@') ? clean : `${clean}@htaf.online`,
+      role: demoRole,
+      schoolId: 'al-namouthajya',
+      accountStatus: 'active',
+      isDemoAccount: isDemo,
+      loginMethod: 'credentials',
+      badge: isDemo ? 'حساب تجريبي نشط' : 'حساب معتمد'
+    },
+    rawUser: null
+  };
+}
+
+// -------------------------------------------------------------
+// DEMO ACCOUNTS MANAGEMENT (SUPER ADMIN)
+// -------------------------------------------------------------
+
+export async function fetchSupabaseDemoAccounts(schoolId?: string): Promise<DbProfile[]> {
+  if (!isSupabaseConfigured) {
+    // Return sample offline demo accounts
+    return [
+      {
+        id: 'usr-demo-student',
+        full_name: 'طالب تجريبي (الصف الثالث المتوسط)',
+        username: 'student.demo1',
+        email: 'student.demo1@htaf.online',
+        role: 'student',
+        school_id: 'al-namouthajya',
+        class_id: 'class-3-1',
+        grade_id: 'grade-3-m',
+        account_status: 'active',
+        is_demo_account: true,
+        demo_expires_at: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+        created_at: new Date().toISOString(),
+        last_login_at: new Date().toISOString()
+      },
+      {
+        id: 'usr-demo-teacher',
+        full_name: 'أ. عبد العزيز الشمري (معلم العلوم)',
+        username: 'teacher.demo1',
+        email: 'teacher.demo1@htaf.online',
+        role: 'teacher',
+        school_id: 'al-namouthajya',
+        account_status: 'active',
+        is_demo_account: true,
+        demo_expires_at: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+        created_at: new Date().toISOString(),
+        last_login_at: new Date().toISOString()
+      },
+      {
+        id: 'usr-demo-parent',
+        full_name: 'أبو فهد (ولي أمر تجريبي)',
+        username: 'parent.demo1',
+        email: 'parent.demo1@htaf.online',
+        role: 'parent',
+        school_id: 'al-namouthajya',
+        account_status: 'active',
+        is_demo_account: true,
+        demo_expires_at: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+        created_at: new Date().toISOString(),
+        last_login_at: new Date().toISOString()
+      },
+      {
+        id: 'usr-demo-counselor',
+        full_name: 'أ. خالد التميمي (الموجه الطلابي)',
+        username: 'counselor.demo1',
+        email: 'counselor.demo1@htaf.online',
+        role: 'counselor',
+        school_id: 'al-namouthajya',
+        account_status: 'active',
+        is_demo_account: true,
+        demo_expires_at: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+        created_at: new Date().toISOString(),
+        last_login_at: new Date().toISOString()
+      }
+    ];
+  }
+
+  try {
+    let query = supabase
+      .from('profiles')
+      .select('*')
+      .eq('is_demo_account', true)
+      .order('created_at', { ascending: false });
+
+    if (schoolId) {
+      query = query.eq('school_id', schoolId);
+    }
+
+    const { data, error } = await query;
+    if (error || !data) {
+      console.warn('Error fetching demo accounts:', error?.message);
+      return [];
+    }
+    return data;
+  } catch (err) {
+    console.warn('Exception fetching demo accounts:', err);
+    return [];
+  }
+}
+
+export async function createRealDemoAccountInSupabase(payload: {
+  fullName: string;
+  username: string;
+  email: string;
+  temporaryPassword?: string;
+  role: string;
+  schoolId: string;
+  gradeId?: string;
+  classId?: string;
+  expiresAt: string;
+}): Promise<{ success: boolean; profile?: DbProfile; message: string }> {
+  const cleanUsername = payload.username.trim().toLowerCase();
+  const cleanEmail = payload.email.trim().toLowerCase() || `${cleanUsername}@htaf.online`;
+  const password = payload.temporaryPassword?.trim() || 'DemoPass2026!';
+
+  if (isSupabaseConfigured) {
+    try {
+      // 1. Create Auth User in Supabase
+      const { data: authData, error: authErr } = await supabase.auth.signUp({
+        email: cleanEmail,
+        password,
+        options: {
+          data: {
+            full_name: payload.fullName,
+            username: cleanUsername,
+            role: payload.role,
+            school_id: payload.schoolId,
+            is_demo_account: true
+          }
+        }
+      });
+
+      const userId = authData?.user?.id || `usr-demo-${Date.now()}`;
+
+      // 2. Insert into profiles table
+      const profileData: DbProfile = {
+        id: userId,
+        full_name: payload.fullName,
+        username: cleanUsername,
+        email: cleanEmail,
+        role: payload.role,
+        school_id: payload.schoolId,
+        grade_id: payload.gradeId,
+        class_id: payload.classId,
+        account_status: 'active',
+        is_demo_account: true,
+        demo_expires_at: payload.expiresAt,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      await supabase.from('profiles').upsert(profileData, { onConflict: 'username' });
+
+      // 3. Link into school_users
+      await supabase.from('school_users').upsert({
+        school_id: payload.schoolId,
+        user_id: userId,
+        email: cleanEmail,
+        full_name: payload.fullName,
+        role: payload.role,
+        status: 'active',
+        created_at: new Date().toISOString()
+      }, { onConflict: 'school_id,user_id' });
+
+      return {
+        success: true,
+        profile: profileData,
+        message: `تم إنشاء حساب التجربة الفعلي (${cleanUsername}) بنجاح في Supabase!`
+      };
+    } catch (err: any) {
+      console.error('Error creating real demo account in Supabase:', err);
+      return {
+        success: false,
+        message: err.message || 'فشل إنشاء الحساب التجريبي في Supabase.'
+      };
+    }
+  }
+
+  // Offline simulated creation
+  const demoProfile: DbProfile = {
+    id: `usr-demo-${Date.now()}`,
+    full_name: payload.fullName,
+    username: cleanUsername,
+    email: cleanEmail,
+    role: payload.role,
+    school_id: payload.schoolId,
+    grade_id: payload.gradeId,
+    class_id: payload.classId,
+    account_status: 'active',
+    is_demo_account: true,
+    demo_expires_at: payload.expiresAt,
+    created_at: new Date().toISOString()
+  };
+
+  return {
+    success: true,
+    profile: demoProfile,
+    message: `تم إنشاء الحساب التجريبي (${cleanUsername}) محلياً.`
+  };
+}
+
+export async function toggleUserAccountStatus(
+  userId: string,
+  newStatus: 'active' | 'suspended'
+): Promise<boolean> {
+  if (!isSupabaseConfigured) return true;
+  try {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ account_status: newStatus, updated_at: new Date().toISOString() })
+      .eq('id', userId);
+
+    await supabase
+      .from('school_users')
+      .update({ status: newStatus })
+      .eq('user_id', userId);
+
+    return !error;
+  } catch (err) {
+    console.warn('Error toggling account status:', err);
+    return false;
+  }
+}
+
+export async function extendDemoAccountDuration(
+  userId: string,
+  additionalDays: number
+): Promise<boolean> {
+  if (!isSupabaseConfigured) return true;
+  try {
+    const profile = await fetchUserProfile(userId);
+    const currentExpiry = profile?.demo_expires_at ? new Date(profile.demo_expires_at) : new Date();
+    const newExpiry = new Date(Math.max(currentExpiry.getTime(), Date.now()) + additionalDays * 24 * 3600 * 1000).toISOString();
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ demo_expires_at: newExpiry, updated_at: new Date().toISOString() })
+      .eq('id', userId);
+
+    return !error;
+  } catch (err) {
+    console.warn('Error extending demo account duration:', err);
+    return false;
+  }
+}
+
+export async function fetchSchoolUsersForInvite(schoolId: string): Promise<Array<{
+  id: string;
+  fullName: string;
+  username: string;
+  role: string;
+  email: string;
+  avatarUrl?: string;
+}>> {
+  if (!isSupabaseConfigured || !schoolId) return [];
+  try {
+    // 1. Try profiles table first
+    const { data: profiles, error: profErr } = await supabase
+      .from('profiles')
+      .select('id, full_name, username, role, email, avatar_url')
+      .eq('school_id', schoolId)
+      .eq('account_status', 'active');
+
+    if (!profErr && profiles && profiles.length > 0) {
+      return profiles.map(p => ({
+        id: p.id,
+        fullName: p.full_name,
+        username: p.username,
+        role: p.role,
+        email: p.email,
+        avatarUrl: p.avatar_url
+      }));
+    }
+
+    // 2. Fallback to school_users table
+    const { data: schoolUsers } = await supabase
+      .from('school_users')
+      .select('*')
+      .eq('school_id', schoolId)
+      .eq('status', 'active');
+
+    if (schoolUsers) {
+      return schoolUsers.map(su => ({
+        id: su.user_id,
+        fullName: su.full_name,
+        username: su.email ? su.email.split('@')[0] : 'user',
+        role: su.role,
+        email: su.email,
+      }));
+    }
+
+    return [];
+  } catch (err) {
+    console.warn('Error fetching school users for invite:', err);
+    return [];
+  }
+}
+
+// -------------------------------------------------------------
 // SUPABASE REAL DATABASE QUERIES
 // -------------------------------------------------------------
 

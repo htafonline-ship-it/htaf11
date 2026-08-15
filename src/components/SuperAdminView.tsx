@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { SchoolTenant, SchoolRegistrationCode, CurriculumBook } from '../types';
 import { CurriculumImportView } from './CurriculumImportView';
 import { KharjSchoolsHub } from './KharjSchoolsHub';
+import { DemoAccountsManager } from './DemoAccountsManager';
 import {
   Crown,
   KeyRound,
@@ -24,7 +25,8 @@ import {
   Eye,
   EyeOff,
   MapPin,
-  Send
+  Send,
+  UserCheck
 } from 'lucide-react';
 
 interface SuperAdminViewProps {
@@ -56,7 +58,7 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
   onReplaceBookVersion,
   onDeleteBook
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'codes' | 'schools' | 'new_code' | 'curriculum_import' | 'kharj_schools'>('kharj_schools');
+  const [activeSubTab, setActiveSubTab] = useState<'codes' | 'schools' | 'new_code' | 'curriculum_import' | 'kharj_schools' | 'demo_accounts'>('kharj_schools');
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
@@ -240,6 +242,18 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
       <div className="flex items-center justify-between gap-4 bg-white p-2 rounded-2xl border border-slate-200 shadow-sm overflow-x-auto">
         <div className="flex items-center gap-2">
           <button
+            onClick={() => setActiveSubTab('demo_accounts')}
+            className={`px-4 py-2.5 rounded-xl text-xs font-black transition flex items-center gap-2 whitespace-nowrap ${
+              activeSubTab === 'demo_accounts'
+                ? 'bg-gradient-to-r from-emerald-600 to-teal-700 text-white shadow-md'
+                : 'text-slate-700 hover:bg-emerald-50 hover:text-emerald-800'
+            }`}
+          >
+            <Users className="w-4 h-4 text-emerald-400" />
+            <span>حسابات التجربة المعملية (Demo Accounts)</span>
+          </button>
+
+          <button
             onClick={() => setActiveSubTab('kharj_schools')}
             className={`px-4 py-2.5 rounded-xl text-xs font-black transition flex items-center gap-2 whitespace-nowrap ${
               activeSubTab === 'kharj_schools'
@@ -313,6 +327,11 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
           </div>
         )}
       </div>
+
+      {/* DEMO EXPERIENCE ACCOUNTS TAB */}
+      {activeSubTab === 'demo_accounts' && (
+        <DemoAccountsManager schools={schools} />
+      )}
 
       {/* KHARJ SCHOOLS & CENTERS INVITATIONS HUB TAB */}
       {activeSubTab === 'kharj_schools' && (

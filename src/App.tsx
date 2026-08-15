@@ -815,6 +815,16 @@ export default function App() {
                 onSendGroupMessage={handleSendGroupMessage}
                 onDeleteGroupMessage={handleDeleteGroupMessage}
                 onAddAuditLog={(log) => setAuditLogs((prev) => [log, ...prev])}
+                onOpenLoginModal={() => setIsLoginModalOpen(true)}
+                onSchoolJoined={() => {
+                  if (currentUser?.id) {
+                    syncUserAuthWithSupabase({
+                      id: currentUser.id,
+                      email: currentUser.email,
+                      user_metadata: { full_name: currentUser.fullName, avatar_url: currentUser.avatarUrl }
+                    });
+                  }
+                }}
               />
             )}
 

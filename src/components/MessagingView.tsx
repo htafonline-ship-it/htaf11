@@ -31,7 +31,14 @@ import {
   createModerationAuditLog,
   uploadMessageAttachment,
   getMessagingSqlMigration,
-  markConversationAsRead
+  markConversationAsRead,
+  verifyUserMessagingEligibility,
+  lookupInvitationCode,
+  redeemInvitationAndLinkUser,
+  submitNewSchoolRegistrationRequest,
+  MessagingEligibilityResult,
+  InvitationLookupResult,
+  MESSAGING_ACCESS_DENIED_MESSAGE
 } from '../lib/messagingService';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import {
@@ -58,13 +65,18 @@ import {
   HeartHandshake,
   ShieldCheck,
   Building,
+  Building2,
   Upload,
   RefreshCw,
   Eye,
   Bell,
   Radio,
   CheckCheck,
-  X
+  X,
+  KeyRound,
+  LogIn,
+  Info,
+  ChevronLeft
 } from 'lucide-react';
 
 interface MessagingViewProps {
@@ -81,6 +93,8 @@ interface MessagingViewProps {
   onSendGroupMessage?: (groupId: string, text: string, problemCitation?: any, homeworkCitation?: HomeworkCitation) => void;
   onDeleteGroupMessage?: (messageId: string, deletedBy: string) => void;
   onAddAuditLog?: (log: ModerationAuditLogItem) => void;
+  onOpenLoginModal?: () => void;
+  onSchoolJoined?: () => void;
 }
 
 // Banned words filter list for real-time AI moderation guard
@@ -99,7 +113,9 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
   onAddTicketMessage,
   onSendGroupMessage,
   onDeleteGroupMessage,
-  onAddAuditLog
+  onAddAuditLog,
+  onOpenLoginModal,
+  onSchoolJoined
 }) => {
   const [activeTab, setActiveTab] = useState<'tickets' | 'groups' | 'direct'>('tickets');
 
@@ -107,6 +123,165 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
   const activeSchoolId = currentSchool?.id || currentUser?.schoolId || 'al-namouthajya';
   const effectiveUserName = currentUser?.fullName || initialStudentProfile?.name || 'مستخدم المنصة';
   const effectiveUserId = currentUser?.id || 'usr-default';
+
+  // -------------------------------------------------------------
+  // 0. ACCESS CONTROL & ELIGIBILITY STATE
+  // -------------------------------------------------------------
+  const [eligibility, setEligibility] = useState<MessagingEligibilityResult>({
+    isEligible: false,
+    message: 'جاري التحقق من صلاحية الوصول لنظام التواصل...',
+    accountStatus: 'unregistered'
+  });
+  const [isVerifyingEligibility, setIsVerifyingEligibility] = useState(true);
+  const [showGateModal, setShowGateModal] = useState(false);
+  const [gateActionTab, setGateActionTab] = useState<'options' | 'login' | 'invitation' | 'register_school'>('options');
+  const [gateInviteCode, setGateInviteCode] = useState('');
+  const [gateInviteLookup, setGateInviteLookup] = useState<InvitationLookupResult | null>(null);
+  const [isCheckingCode, setIsCheckingCode] = useState(false);
+  const [isRedeemingCode, setIsRedeemingCode] = useState(false);
+  const [gateFeedback, setGateFeedback] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+
+  // New School Registration Form
+  const [newSchoolName, setNewSchoolName] = useState('');
+  const [newSchoolStage, setNewSchoolStage] = useState('المرحلة المتوسطة');
+  const [newSchoolRegion, setNewSchoolRegion] = useState('منطقة الرياض');
+  const [newSchoolCity, setNewSchoolCity] = useState('الرياض');
+  const [newSchoolApplicantName, setNewSchoolApplicantName] = useState(currentUser?.fullName || effectiveUserName);
+  const [newSchoolApplicantEmail, setNewSchoolApplicantEmail] = useState(currentUser?.email || '');
+  const [newSchoolApplicantPhone, setNewSchoolApplicantPhone] = useState('');
+  const [newSchoolNotes, setNewSchoolNotes] = useState('');
+  const [isSubmittingNewSchool, setIsSubmittingNewSchool] = useState(false);
+
+  // Check Eligibility on Mount or User Change
+  const runEligibilityCheck = async () => {
+    setIsVerifyingEligibility(true);
+    try {
+      const res = await verifyUserMessagingEligibility(currentUser, activeSchoolId);
+      setEligibility(res);
+    } catch {
+      setEligibility({
+        isEligible: false,
+        message: 'تعذر التحقق من الصلاحيات. يرجى تسجيل الدخول مجدداً.',
+        accountStatus: 'unregistered'
+      });
+    } finally {
+      setIsVerifyingEligibility(false);
+    }
+  };
+
+  useEffect(() => {
+    runEligibilityCheck();
+  }, [currentUser, activeSchoolId]);
+
+  // Gate check guard before any interactive action
+  const checkEligibilityOrOpenGate = (): boolean => {
+    if (!eligibility.isEligible) {
+      setGateFeedback(null);
+      if (!currentUser || currentUser.role === 'student' && !currentUser.schoolId) {
+        setGateActionTab('options');
+      }
+      setShowGateModal(true);
+      return false;
+    }
+    return true;
+  };
+
+  // Invitation Code Lookup Handler
+  const handleLookupInviteCode = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!gateInviteCode.trim()) return;
+    setIsCheckingCode(true);
+    setGateFeedback(null);
+    try {
+      const res = await lookupInvitationCode(gateInviteCode.trim());
+      setGateInviteLookup(res);
+      if (!res.isValid) {
+        setGateFeedback({ type: 'error', text: res.error || 'رمز الدعوة غير صالح أو منتهي الصلاحية.' });
+      }
+    } catch (err: any) {
+      setGateFeedback({ type: 'error', text: err.message || 'حدث خطأ أثناء فحص رمز الدعوة' });
+    } finally {
+      setIsCheckingCode(false);
+    }
+  };
+
+  // Invitation Code Redeem & Link Handler
+  const handleRedeemInviteCode = async () => {
+    if (!gateInviteLookup?.isValid) return;
+    
+    // Construct user object if guest
+    const userToLink: AuthUser = currentUser && currentUser.id && !currentUser.id.startsWith('usr-default')
+      ? currentUser
+      : {
+          id: `usr-${Date.now()}`,
+          username: effectiveUserName || 'مستخدم جديد',
+          fullName: effectiveUserName || 'مستخدم جديد',
+          role: gateInviteLookup.role || 'student',
+          email: `${Date.now()}@student.platform.local`,
+          schoolId: gateInviteLookup.schoolId || 'kharj-science-complex',
+          createdAt: new Date().toISOString(),
+        };
+
+    setIsRedeemingCode(true);
+    setGateFeedback(null);
+    try {
+      const linkRes = await redeemInvitationAndLinkUser(
+        gateInviteCode.trim(),
+        userToLink,
+        gateInviteLookup
+      );
+      if (linkRes.success) {
+        setGateFeedback({ type: 'success', text: linkRes.message });
+        await runEligibilityCheck();
+        if (onSchoolJoined) onSchoolJoined();
+        setTimeout(() => {
+          setShowGateModal(false);
+          setGateActionTab('options');
+          setGateInviteLookup(null);
+          setGateInviteCode('');
+        }, 1800);
+      } else {
+        setGateFeedback({ type: 'error', text: linkRes.message });
+      }
+    } catch (err: any) {
+      setGateFeedback({ type: 'error', text: err.message || 'فشل الانضمام للمدرسة' });
+    } finally {
+      setIsRedeemingCode(false);
+    }
+  };
+
+  // New School Registration Submit Handler
+  const handleSubmitNewSchool = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSchoolName.trim() || !newSchoolApplicantName.trim()) {
+      setGateFeedback({ type: 'error', text: 'يرجى إدخال اسم المدرسة واسم مقدم الطلب.' });
+      return;
+    }
+    setIsSubmittingNewSchool(true);
+    setGateFeedback(null);
+    try {
+      const res = await submitNewSchoolRegistrationRequest({
+        schoolName: newSchoolName.trim(),
+        stage: newSchoolStage,
+        region: newSchoolRegion,
+        city: newSchoolCity,
+        applicantName: newSchoolApplicantName.trim(),
+        applicantEmail: newSchoolApplicantEmail.trim() || (currentUser?.email || ''),
+        applicantPhone: newSchoolApplicantPhone.trim(),
+        notes: newSchoolNotes.trim()
+      });
+      if (res.success) {
+        setGateFeedback({ type: 'success', text: res.message });
+        await runEligibilityCheck();
+      } else {
+        setGateFeedback({ type: 'error', text: res.message });
+      }
+    } catch (err: any) {
+      setGateFeedback({ type: 'error', text: err.message || 'فشل إرسال طلب تسجيل المدرسة.' });
+    } finally {
+      setIsSubmittingNewSchool(false);
+    }
+  };
 
   // -------------------------------------------------------------
   // 1. SUPPORT TICKETS STATE
@@ -172,6 +347,34 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
   const [moderationWarning, setModerationWarning] = useState<string | null>(null);
   const [showHomeworkModal, setShowHomeworkModal] = useState(false);
   const [studyAttachment, setStudyAttachment] = useState<{ file: File; name: string } | null>(null);
+
+  // Study Room Membership & Invitation State
+  const [roomMembers, setRoomMembers] = useState<Array<{
+    roomId: string;
+    userId: string;
+    fullName: string;
+    username: string;
+    role: string;
+    memberRole: 'owner' | 'supervisor' | 'member';
+    joinedAt: string;
+    isMuted: boolean;
+  }>>([]);
+  const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+  const [showMembersModal, setShowMembersModal] = useState(false);
+  const [showCreateRoomModal, setShowCreateRoomModal] = useState(false);
+  const [availableSchoolUsers, setAvailableSchoolUsers] = useState<UserProfile[]>([]);
+  const [inviteUserId, setInviteUserId] = useState('');
+  const [inviteRoleInRoom, setInviteRoleInRoom] = useState<'member' | 'supervisor'>('member');
+  const [isInvitingUser, setIsInvitingUser] = useState(false);
+  const [inviteFeedback, setInviteFeedback] = useState<string | null>(null);
+
+  // New Room Creation State
+  const [newRoomName, setNewRoomName] = useState('');
+  const [newRoomSubject, setNewRoomSubject] = useState('العلوم العامة');
+  const [newRoomGrade, setNewRoomGrade] = useState('الصف الثالث المتوسط');
+  const [newRoomDescription, setNewRoomDescription] = useState('');
+  const [newRoomIcon, setNewRoomIcon] = useState('🔬');
+  const [isCreatingRoom, setIsCreatingRoom] = useState(false);
 
   // -------------------------------------------------------------
   // 3. DIRECT & ROLE-BASED CONVERSATIONS STATE
@@ -450,7 +653,7 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
     }
   }, [selectedConversation?.id, effectiveUserId, activeSchoolId]);
 
-  // Load study room messages when selected room changes
+  // Load study room messages and members when selected room changes
   useEffect(() => {
     if (selectedGroup) {
       fetchStudyRoomMessages(selectedGroup.id).then(msgs => {
@@ -464,8 +667,27 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
           }
         }
       });
+
+      // Fetch real members of the study room
+      setIsLoadingMembers(true);
+      fetchStudyRoomMembers(selectedGroup.id).then(members => {
+        setRoomMembers(members);
+        if (members.length > 0) {
+          setSelectedGroup(prev => ({ ...prev, membersCount: members.length }));
+        }
+        setIsLoadingMembers(false);
+      });
     }
   }, [selectedGroup?.id, propGroupMessages]);
+
+  // Load available school profiles for member invitations
+  useEffect(() => {
+    if (activeSchoolId) {
+      fetchSchoolProfiles(activeSchoolId).then(profs => {
+        setAvailableSchoolUsers(profs);
+      });
+    }
+  }, [activeSchoolId]);
 
   // Supabase Realtime Channels setup for real-time synchronization with deduplication
   useEffect(() => {
@@ -770,6 +992,10 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
   // -------------------------------------------------------------
   const handleCreateTicketSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!checkEligibilityOrOpenGate()) {
+      setShowNewTicketModal(false);
+      return;
+    }
     if (!newTicketSubject.trim() || !newTicketInitialMsg.trim()) return;
 
     setIsCreatingTicket(true);
@@ -814,6 +1040,7 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
 
   const handleSendTicketReply = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!checkEligibilityOrOpenGate()) return;
     if (!selectedTicket || (!ticketReplyText.trim() && !ticketAttachment)) return;
 
     setIsSubmittingTicketReply(true);
@@ -874,6 +1101,7 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
 
   const handleTicketStatusChange = async (newStatus: SupportTicket['status']) => {
     if (!selectedTicket) return;
+    if (!checkEligibilityOrOpenGate()) return;
     await updateTicketStatus(selectedTicket.id, newStatus);
     const updated = { ...selectedTicket, status: newStatus, lastUpdated: 'الآن' };
     setSelectedTicket(updated);
@@ -885,6 +1113,10 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
   // -------------------------------------------------------------
   const handleCreateConversationSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!checkEligibilityOrOpenGate()) {
+      setShowNewConvModal(false);
+      return;
+    }
     if (!newConvTitle.trim()) return;
 
     setIsCreatingConv(true);
@@ -924,6 +1156,7 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
 
   const handleSendDirectMessageSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!checkEligibilityOrOpenGate()) return;
     if (!selectedConversation || (!directMsgText.trim() && !directAttachment)) return;
 
     // AI Moderation check
@@ -985,6 +1218,7 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
   // -------------------------------------------------------------
   const handleSendGroupMessageSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!checkEligibilityOrOpenGate()) return;
     if (!groupMsgText.trim() && !studyAttachment) return;
 
     // AI Content Moderation Guard
@@ -1054,6 +1288,10 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
   };
 
   const handleHomeworkSubmit = async (citation: HomeworkCitation) => {
+    if (!checkEligibilityOrOpenGate()) {
+      setShowHomeworkModal(false);
+      return;
+    }
     const sent = await sendStudyRoomMessage({
       roomId: selectedGroup.id,
       schoolId: activeSchoolId,
@@ -1072,6 +1310,7 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
   };
 
   const handleDeleteMessage = async (messageId: string) => {
+    if (!checkEligibilityOrOpenGate()) return;
     const actor = currentRole === 'admin' || currentRole === 'principal' ? 'المشرف الإداري' : effectiveUserName;
     await deleteStudyRoomMessage(messageId, actor, activeSchoolId);
 
@@ -1081,6 +1320,68 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
 
     if (onDeleteGroupMessage) {
       onDeleteGroupMessage(messageId, actor);
+    }
+  };
+
+  const handleCreateRoomSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newRoomName.trim()) return;
+
+    setIsCreatingRoom(true);
+    const created = await createStudyRoom({
+      schoolId: activeSchoolId,
+      name: newRoomName.trim(),
+      subject: newRoomSubject,
+      grade: newRoomGrade,
+      icon: newRoomIcon || '🔬',
+      description: newRoomDescription.trim() || 'غرفة مذاكرة ونقاش علمي تفاعلي',
+      createdBy: effectiveUserId
+    });
+
+    setIsCreatingRoom(false);
+    if (created) {
+      setStudyRooms(prev => [created, ...prev]);
+      setSelectedGroup(created);
+      setShowCreateRoomModal(false);
+      setNewRoomName('');
+      setNewRoomDescription('');
+      fetchStudyRoomMembers(created.id).then(m => setRoomMembers(m));
+    }
+  };
+
+  const handleInviteMemberSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inviteUserId.trim() || !selectedGroup) return;
+
+    setIsInvitingUser(true);
+    setInviteFeedback(null);
+
+    const success = await inviteUserToStudyRoom(
+      selectedGroup.id,
+      inviteUserId.trim(),
+      inviteRoleInRoom
+    );
+
+    setIsInvitingUser(false);
+    if (success) {
+      setInviteFeedback('تمت إضافة العضو إلى الغرفة الدراسية بنجاح');
+      setInviteUserId('');
+      const updatedMembers = await fetchStudyRoomMembers(selectedGroup.id);
+      setRoomMembers(updatedMembers);
+      setSelectedGroup(prev => ({ ...prev, membersCount: updatedMembers.length }));
+      setStudyRooms(prev => prev.map(r => r.id === selectedGroup.id ? { ...r, membersCount: updatedMembers.length } : r));
+    } else {
+      setInviteFeedback('تعذر إضافة العضو، يرجى التحقق من المستخدم');
+    }
+  };
+
+  const handleRemoveMember = async (userId: string) => {
+    if (!selectedGroup) return;
+    const ok = await removeUserFromStudyRoom(selectedGroup.id, userId);
+    if (ok) {
+      setRoomMembers(prev => prev.filter(m => m.userId !== userId));
+      setSelectedGroup(prev => ({ ...prev, membersCount: Math.max(1, (prev.membersCount || 1) - 1) }));
+      setStudyRooms(prev => prev.map(r => r.id === selectedGroup.id ? { ...r, membersCount: Math.max(1, (r.membersCount || 1) - 1) } : r));
     }
   };
 
@@ -1199,6 +1500,88 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
         </div>
       </div>
 
+      {/* Access Restriction Banner if not eligible or pending */}
+      {!eligibility.isEligible && (
+        <div
+          className={`p-4 sm:p-5 rounded-3xl border-2 backdrop-blur-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-md transition ${
+            eligibility.accountStatus === 'pending' || eligibility.accountStatus === 'pending_review'
+              ? 'bg-amber-500/10 border-amber-500/30 text-amber-950'
+              : 'bg-rose-500/10 border-rose-500/30 text-rose-950'
+          }`}
+        >
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div
+              className={`p-3 rounded-2xl shrink-0 ${
+                eligibility.accountStatus === 'pending' || eligibility.accountStatus === 'pending_review'
+                  ? 'bg-amber-500 text-slate-950'
+                  : 'bg-rose-600 text-white'
+              }`}
+            >
+              <Lock className="w-5 h-5" />
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <h4 className="font-black text-sm sm:text-base">
+                  {eligibility.accountStatus === 'pending' || eligibility.accountStatus === 'pending_review'
+                    ? 'الحساب قيد الاعتماد من إدارة المدرسة (Pending Approval)'
+                    : 'يجب تسجيل الدخول أو الانضمام إلى مدرسة قبل استخدام التواصل المدرسي'}
+                </h4>
+                <span
+                  className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                    eligibility.accountStatus === 'pending' || eligibility.accountStatus === 'pending_review'
+                      ? 'bg-amber-200 text-amber-900'
+                      : 'bg-rose-200 text-rose-900'
+                  }`}
+                >
+                  {eligibility.accountStatus === 'pending' ? 'قيد المراجعة' : 'وصول مقيّد'}
+                </span>
+              </div>
+              <p className="text-xs opacity-90 leading-relaxed max-w-3xl">
+                {eligibility.message ||
+                  'التواصل المدرسي، التذاكر الإدارية، وغرف المذاكرة مخصصة للطلاب والمعلمين المعتمدين في مدارسهم.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 w-full md:w-auto shrink-0 pt-2 md:pt-0">
+            {onOpenLoginModal && (!currentUser || currentUser.role === 'student' && !currentUser.schoolId) && (
+              <button
+                onClick={() => {
+                  setGateActionTab('login');
+                  setShowGateModal(true);
+                }}
+                className="flex-1 sm:flex-none px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-black rounded-xl shadow-sm transition flex items-center justify-center gap-1.5"
+              >
+                <LogIn className="w-4 h-4" />
+                <span>تسجيل الدخول</span>
+              </button>
+            )}
+
+            <button
+              onClick={() => {
+                setGateActionTab('invitation');
+                setShowGateModal(true);
+              }}
+              className="flex-1 sm:flex-none px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-black rounded-xl shadow-sm transition flex items-center justify-center gap-1.5"
+            >
+              <KeyRound className="w-4 h-4" />
+              <span>لدي رمز دعوة</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setGateActionTab('register_school');
+                setShowGateModal(true);
+              }}
+              className="flex-1 sm:flex-none px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-black rounded-xl shadow-sm transition flex items-center justify-center gap-1.5"
+            >
+              <Building2 className="w-4 h-4 text-emerald-400" />
+              <span>تسجيل مدرسة جديدة</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ========================================================================= */}
       {/* TAB A: SUPPORT TICKETS & ADMINISTRATIVE INQUIRIES                         */}
       {/* ========================================================================= */}
@@ -1213,7 +1596,11 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
               </h3>
 
               <button
-                onClick={() => setShowNewTicketModal(true)}
+                onClick={() => {
+                  if (checkEligibilityOrOpenGate()) {
+                    setShowNewTicketModal(true);
+                  }
+                }}
                 className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-xl shadow-sm flex items-center gap-1.5 transition shadow-blue-500/20"
               >
                 <PlusCircle className="w-4 h-4" />
@@ -1490,7 +1877,11 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
               </h3>
 
               <button
-                onClick={() => setShowNewConvModal(true)}
+                onClick={() => {
+                  if (checkEligibilityOrOpenGate()) {
+                    setShowNewConvModal(true);
+                  }
+                }}
                 className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3 py-1.5 rounded-xl shadow-sm flex items-center gap-1.5 transition"
               >
                 <PlusCircle className="w-4 h-4" />
@@ -1705,7 +2096,11 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
                 <MessageCircle className="w-12 h-12 text-slate-300" />
                 <p className="text-sm font-bold">اختر محادثة مباشرة أو أنشئ قناة تواصل جديدة</p>
                 <button
-                  onClick={() => setShowNewConvModal(true)}
+                  onClick={() => {
+                    if (checkEligibilityOrOpenGate()) {
+                      setShowNewConvModal(true);
+                    }
+                  }}
                   className="bg-indigo-600 text-white text-xs font-bold px-4 py-2 rounded-xl"
                 >
                   بدء محادثة رسمية
@@ -1723,10 +2118,19 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Left: Study Groups List */}
           <div className="lg:col-span-4 space-y-4">
-            <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
-              <Users className="w-5 h-5 text-indigo-600" />
-              <span>غرف المذاكرة الجماعية ({studyRooms.length})</span>
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
+                <Users className="w-5 h-5 text-indigo-600" />
+                <span>غرف المذاكرة الجماعية ({studyRooms.length})</span>
+              </h3>
+              <button
+                onClick={() => setShowCreateRoomModal(true)}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-sm transition"
+              >
+                <PlusCircle className="w-3.5 h-3.5" />
+                <span>غرفة جديدة</span>
+              </button>
+            </div>
 
             <div className="space-y-3 max-h-[580px] overflow-y-auto pr-1">
               {studyRooms.map((grp) => {
@@ -1752,7 +2156,7 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
                           {grp.grade}
                         </p>
                         <span className="text-[10px] font-bold text-indigo-400">
-                          👥 {grp.membersCount} طالب نشط
+                          👥 {grp.membersCount} عضو نشط
                         </span>
                       </div>
                     </div>
@@ -1775,9 +2179,19 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
                   </div>
                 </div>
 
-                <div className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 text-[10px] font-bold px-3 py-1 rounded-full border border-emerald-200">
-                  <Lock className="w-3 h-3 text-emerald-600" />
-                  <span>غرفة آمنة ومراقبة آلياً</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowMembersModal(true)}
+                    className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold px-3 py-1.5 rounded-xl border border-indigo-200 flex items-center gap-1.5 transition"
+                  >
+                    <Users className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>الأعضاء ({roomMembers.length || selectedGroup.membersCount})</span>
+                  </button>
+
+                  <div className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 text-[10px] font-bold px-3 py-1.5 rounded-xl border border-emerald-200">
+                    <Lock className="w-3 h-3 text-emerald-600" />
+                    <span>غرفة آمنة ومراقبة</span>
+                  </div>
                 </div>
               </div>
 
@@ -1922,7 +2336,11 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
                 <div className="flex items-center gap-2 sm:gap-3">
                   <button
                     type="button"
-                    onClick={() => setShowHomeworkModal(true)}
+                    onClick={() => {
+                      if (checkEligibilityOrOpenGate()) {
+                        setShowHomeworkModal(true);
+                      }
+                    }}
                     className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold px-3 py-3 rounded-2xl text-xs flex items-center gap-1.5 border border-indigo-200 transition shrink-0"
                     title="إضافة واجب دراسي (يدوي أو بالذكاء الاصطناعي)"
                   >
@@ -2178,7 +2596,250 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* MODALS: 3. SQL MIGRATION VIEW MODAL                                       */}
+      {/* MODALS: 3. STUDY ROOM MEMBERS & INVITATION MODAL                           */}
+      {/* ========================================================================= */}
+      {showMembersModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-xl w-full space-y-6 shadow-2xl border border-slate-200 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">{selectedGroup.icon}</span>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">أعضاء {selectedGroup.name}</h3>
+                  <p className="text-xs text-slate-500">إدارة الطلاب والمشرفين المنضمين للغرفة</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowMembersModal(false);
+                  setInviteFeedback(null);
+                }}
+                className="text-slate-400 hover:text-slate-600 font-bold text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Invite Form */}
+            <form onSubmit={handleInviteMemberSubmit} className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+              <h4 className="font-extrabold text-xs text-slate-800 flex items-center gap-1.5">
+                <PlusCircle className="w-4 h-4 text-indigo-600" />
+                <span>دعوة أو إضافة عضو جديد للغرفة:</span>
+              </h4>
+
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                <div className="sm:col-span-7">
+                  <select
+                    value={inviteUserId}
+                    onChange={(e) => setInviteUserId(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800"
+                  >
+                    <option value="">-- اختر مستخدم من المدرسة --</option>
+                    {availableSchoolUsers.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.full_name} (@{u.username}) - {u.role === 'student' ? 'طالب' : u.role === 'teacher' ? 'معلم' : u.role}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="sm:col-span-3">
+                  <select
+                    value={inviteRoleInRoom}
+                    onChange={(e) => setInviteRoleInRoom(e.target.value as any)}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800"
+                  >
+                    <option value="member">طالب / عضو</option>
+                    <option value="supervisor">مشرف الغرفة</option>
+                  </select>
+                </div>
+
+                <div className="sm:col-span-2">
+                  <button
+                    type="submit"
+                    disabled={isInvitingUser || !inviteUserId}
+                    className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold py-2 rounded-xl text-xs transition"
+                  >
+                    {isInvitingUser ? '...' : 'إضافة'}
+                  </button>
+                </div>
+              </div>
+
+              {inviteFeedback && (
+                <p className="text-[11px] font-bold text-indigo-600">{inviteFeedback}</p>
+              )}
+            </form>
+
+            {/* Members List */}
+            <div className="flex-1 overflow-y-auto space-y-2 max-h-[300px] pr-1">
+              <h4 className="font-extrabold text-xs text-slate-700">الأعضاء الحاليين ({roomMembers.length}):</h4>
+
+              {isLoadingMembers ? (
+                <div className="text-center py-6 text-xs text-slate-400">جاري تحميل قائمة الأعضاء...</div>
+              ) : roomMembers.length === 0 ? (
+                <div className="text-center py-6 text-xs text-slate-400">لا يوجد أعضاء مسجلين بعد.</div>
+              ) : (
+                roomMembers.map((m) => (
+                  <div
+                    key={m.userId}
+                    className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200/80"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs">
+                        {m.role === 'teacher' ? '👨‍🏫' : '🧑‍🎓'}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-extrabold text-xs text-slate-900">{m.fullName}</span>
+                          <span className="text-[10px] text-slate-400 font-mono">@{m.username}</span>
+                        </div>
+                        <span className="text-[10px] text-indigo-600 font-bold">
+                          {m.memberRole === 'owner' ? '👑 منشئ الغرفة' : m.memberRole === 'supervisor' ? '⭐ مشرف' : 'عضو مشارك'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {m.memberRole !== 'owner' && (
+                      <button
+                        onClick={() => handleRemoveMember(m.userId)}
+                        className="text-rose-500 hover:text-rose-700 p-1.5 rounded-lg hover:bg-rose-50 text-xs font-bold transition"
+                        title="إزالة العضو من الغرفة"
+                      >
+                        إزالة
+                      </button>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                onClick={() => {
+                  setShowMembersModal(false);
+                  setInviteFeedback(null);
+                }}
+                className="px-5 py-2.5 rounded-xl bg-slate-900 text-white font-bold text-xs"
+              >
+                إغلاق
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODALS: 4. CREATE STUDY ROOM MODAL                                         */}
+      {/* ========================================================================= */}
+      {showCreateRoomModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full space-y-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                <Users className="w-5 h-5 text-indigo-600" />
+                <span>إنشاء غرفة مذاكرة جماعية جديدة</span>
+              </h3>
+              <button
+                onClick={() => setShowCreateRoomModal(false)}
+                className="text-slate-400 hover:text-slate-600 font-bold text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateRoomSubmit} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">اسم الغرفة الدراسية:</label>
+                <input
+                  type="text"
+                  required
+                  value={newRoomName}
+                  onChange={(e) => setNewRoomName(e.target.value)}
+                  placeholder="مثال: نادي علماء الفيزياء - الأول الثانوي"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">المادة الدراسية:</label>
+                  <input
+                    type="text"
+                    required
+                    value={newRoomSubject}
+                    onChange={(e) => setNewRoomSubject(e.target.value)}
+                    placeholder="مثال: العلوم / الفيزياء"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">الصف الدراسي:</label>
+                  <input
+                    type="text"
+                    required
+                    value={newRoomGrade}
+                    onChange={(e) => setNewRoomGrade(e.target.value)}
+                    placeholder="مثال: الصف الثالث المتوسط"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">أيقونة الغرفة التعبيرية:</label>
+                <div className="flex gap-2">
+                  {['🔬', '⚡', '🧬', '🌌', '📐', '🧪', '🔭', '🤖'].map((ico) => (
+                    <button
+                      key={ico}
+                      type="button"
+                      onClick={() => setNewRoomIcon(ico)}
+                      className={`text-xl p-2 rounded-xl border transition ${
+                        newRoomIcon === ico
+                          ? 'border-indigo-600 bg-indigo-50 shadow-sm'
+                          : 'border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      {ico}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">وصف الغرفة والهدف التعليمي:</label>
+                <textarea
+                  rows={3}
+                  value={newRoomDescription}
+                  onChange={(e) => setNewRoomDescription(e.target.value)}
+                  placeholder="وصف مختصر لمجال المذاكرة والمناقشات المسموحة..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateRoomModal(false)}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCreatingRoom}
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold shadow-md shadow-indigo-500/20"
+                >
+                  {isCreatingRoom ? 'جاري الإنشاء...' : 'إنشاء الغرفة الآن'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODALS: 5. SQL MIGRATION VIEW MODAL                                       */}
       {/* ========================================================================= */}
       {showSqlModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
@@ -2220,6 +2881,441 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
                 إغلاق
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODALS: 4. ACCESS CONTROL & SCHOOL LINKING GATE MODAL                      */}
+      {/* ========================================================================= */}
+      {showGateModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 text-white rounded-3xl p-6 sm:p-8 max-w-2xl w-full space-y-6 shadow-2xl border border-slate-800 max-h-[90vh] overflow-y-auto flex flex-col relative">
+            {/* Top Close Button */}
+            <button
+              onClick={() => {
+                setShowGateModal(false);
+                setGateFeedback(null);
+              }}
+              className="absolute top-6 left-6 text-slate-400 hover:text-white p-1 rounded-xl hover:bg-slate-800 transition"
+              title="إغلاق"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Modal Header */}
+            <div className="text-center space-y-2 pt-2">
+              <div className="w-14 h-14 rounded-2xl bg-amber-500/20 border border-amber-500/30 text-amber-400 flex items-center justify-center mx-auto text-2xl font-black shadow-inner">
+                <Lock className="w-7 h-7 text-amber-400" />
+              </div>
+
+              <h3 className="text-lg sm:text-xl font-black text-white">
+                يجب تسجيل الدخول أو الانضمام إلى مدرسة قبل استخدام التواصل المدرسي
+              </h3>
+
+              <p className="text-xs text-slate-300 max-w-lg mx-auto leading-relaxed">
+                نظام التواصل والتذاكر وغرف المذاكرة محمي ومخصص للمستخدمين المسجلين والمرتبطين بمدرسة معتمدة داخل المنصة.
+              </p>
+
+              {currentUser && (
+                <div className="inline-flex items-center gap-2 bg-slate-800/80 px-3 py-1 rounded-full text-[11px] text-slate-300 border border-slate-700">
+                  <User className="w-3.5 h-3.5 text-blue-400" />
+                  <span>المستخدم الحالي: <strong>{currentUser.fullName || currentUser.email}</strong></span>
+                  <span className="text-amber-400 font-bold">({eligibility.accountStatus === 'unlinked' ? 'غير مرتبط بمدرسة' : eligibility.accountStatus})</span>
+                </div>
+              )}
+            </div>
+
+            {/* Feedback Alert */}
+            {gateFeedback && (
+              <div
+                className={`p-3.5 rounded-2xl text-xs font-bold flex items-center gap-2.5 animate-fadeIn ${
+                  gateFeedback.type === 'success'
+                    ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300'
+                    : gateFeedback.type === 'error'
+                    ? 'bg-rose-500/20 border border-rose-500/40 text-rose-300'
+                    : 'bg-blue-500/20 border border-blue-500/40 text-blue-300'
+                }`}
+              >
+                {gateFeedback.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                ) : gateFeedback.type === 'error' ? (
+                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                ) : (
+                  <Info className="w-4 h-4 text-blue-400 shrink-0" />
+                )}
+                <span className="leading-relaxed">{gateFeedback.text}</span>
+              </div>
+            )}
+
+            {/* Tab Switcher */}
+            <div className="flex rounded-2xl bg-slate-950 p-1 border border-slate-800 gap-1 text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => {
+                  setGateActionTab('options');
+                  setGateFeedback(null);
+                }}
+                className={`flex-1 py-2 rounded-xl transition ${
+                  gateActionTab === 'options'
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                الخيارات
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setGateActionTab('login');
+                  setGateFeedback(null);
+                }}
+                className={`flex-1 py-2 rounded-xl transition ${
+                  gateActionTab === 'login'
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                تسجيل الدخول
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setGateActionTab('invitation');
+                  setGateFeedback(null);
+                }}
+                className={`flex-1 py-2 rounded-xl transition ${
+                  gateActionTab === 'invitation'
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                رمز دعوة
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setGateActionTab('register_school');
+                  setGateFeedback(null);
+                }}
+                className={`flex-1 py-2 rounded-xl transition ${
+                  gateActionTab === 'register_school'
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                تسجيل مدرسة
+              </button>
+            </div>
+
+            {/* Tab 1: Options Cards */}
+            {gateActionTab === 'options' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
+                {(!currentUser || (currentUser.role === 'student' && !currentUser.schoolId)) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onOpenLoginModal) {
+                        setShowGateModal(false);
+                        onOpenLoginModal();
+                      } else {
+                        setGateActionTab('login');
+                      }
+                    }}
+                    className="p-4 rounded-2xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-right space-y-2 transition group"
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold">
+                      <LogIn className="w-5 h-5" />
+                    </div>
+                    <h4 className="font-black text-sm text-white group-hover:text-blue-400 transition">
+                      تسجيل الدخول
+                    </h4>
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      إذا كان لديك حساب مسبق في منصة حقائق العلوم، سجّل الدخول فوراً
+                    </p>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setGateActionTab('invitation')}
+                  className="p-4 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-right space-y-2 transition group"
+                >
+                  <div className="w-9 h-9 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-bold">
+                    <KeyRound className="w-5 h-5" />
+                  </div>
+                  <h4 className="font-black text-sm text-white group-hover:text-amber-400 transition">
+                    لدي رمز دعوة
+                  </h4>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    استخدم كود الدعوة الممنوح لك من مدرستك أو معلمك للانضمام التلقائي
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setGateActionTab('register_school')}
+                  className="p-4 rounded-2xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-right space-y-2 transition group sm:col-span-2"
+                >
+                  <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold">
+                    <Building2 className="w-5 h-5" />
+                  </div>
+                  <h4 className="font-black text-sm text-white group-hover:text-emerald-400 transition">
+                    تسجيل مدرسة جديدة (طلب اعتماد)
+                  </h4>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    إرسال طلب تسجيل مدرستك ليتم اعتمادها من إدارة المنصة خلال ساعات
+                  </p>
+                </button>
+              </div>
+            )}
+
+            {/* Tab 2: Login Quick Screen */}
+            {gateActionTab === 'login' && (
+              <div className="space-y-4 text-center py-4 bg-slate-950 p-6 rounded-2xl border border-slate-800">
+                <div className="w-12 h-12 rounded-2xl bg-blue-600/20 text-blue-400 flex items-center justify-center mx-auto">
+                  <LogIn className="w-6 h-6" />
+                </div>
+                <h4 className="font-black text-base text-white">تسجيل الدخول للمنصة</h4>
+                <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                  سجل دخولك بحساب الطالب أو المعلم أو ولي الأمر للوصول الكامل إلى نظام التذاكر وقنوات التواصل وغرف المذاكرة.
+                </p>
+                <div className="pt-2 flex justify-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowGateModal(false);
+                      if (onOpenLoginModal) onOpenLoginModal();
+                    }}
+                    className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-black rounded-xl shadow-lg transition flex items-center gap-2"
+                  >
+                    <LogIn className="w-4 h-4" />
+                    <span>فتح نافذة تسجيل الدخول</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Tab 3: Invitation Code Lookup & Redeem */}
+            {gateActionTab === 'invitation' && (
+              <div className="space-y-4">
+                <form onSubmit={handleLookupInviteCode} className="space-y-3">
+                  <label className="block font-bold text-xs text-slate-300">
+                    أدخل رمز الدعوة المدرسي (Invitation Code):
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      dir="ltr"
+                      value={gateInviteCode}
+                      onChange={(e) => {
+                        setGateInviteCode(e.target.value.toUpperCase());
+                        setGateInviteLookup(null);
+                      }}
+                      placeholder="مثال: HTAF-7K4P9Q أو ALN-SCI-101"
+                      className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 font-mono text-center text-sm font-bold text-amber-300 outline-none focus:ring-2 focus:ring-amber-500 uppercase"
+                    />
+                    <button
+                      type="submit"
+                      disabled={isCheckingCode || !gateInviteCode.trim()}
+                      className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-slate-950 text-xs font-black rounded-xl transition flex items-center gap-1.5 shrink-0"
+                    >
+                      {isCheckingCode ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                      <span>فحص الرمز</span>
+                    </button>
+                  </div>
+                </form>
+
+                {/* Valid Code Result Preview */}
+                {gateInviteLookup && gateInviteLookup.isValid && gateInviteLookup.invitation && (
+                  <div className="bg-emerald-950/40 border border-emerald-500/40 rounded-2xl p-4 space-y-3 animate-fadeIn">
+                    <div className="flex items-center justify-between border-b border-emerald-800/60 pb-2.5">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                        <h4 className="font-black text-xs text-emerald-300">رمز دعوة معتمد وصالح</h4>
+                      </div>
+                      <span className="text-[10px] font-bold bg-emerald-500/20 text-emerald-300 px-2.5 py-0.5 rounded-full border border-emerald-500/30">
+                        {gateInviteLookup.invitation.role === 'teacher' ? 'معلم' : gateInviteLookup.invitation.role === 'counselor' ? 'مرشد' : 'طالب'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
+                        <span className="text-[10px] text-slate-400 block">المدرسة:</span>
+                        <strong className="text-white text-xs">{gateInviteLookup.invitation.school_name}</strong>
+                      </div>
+                      <div className="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
+                        <span className="text-[10px] text-slate-400 block">المرحلة / الصف:</span>
+                        <strong className="text-emerald-300 text-xs">
+                          {gateInviteLookup.invitation.grade || 'المرحلة العامة'}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleRedeemInviteCode}
+                      disabled={isRedeemingCode}
+                      className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-xs rounded-xl shadow-lg transition flex items-center justify-center gap-2"
+                    >
+                      {isRedeemingCode ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>جاري ربط الحساب بالمدرسة...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-4 h-4" />
+                          <span>تأكيد الانضمام للمدرسة والربط الفوري</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Tab 4: Register New School Request */}
+            {gateActionTab === 'register_school' && (
+              <form onSubmit={handleSubmitNewSchool} className="space-y-3 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-bold text-slate-300 mb-1">اسم المدرسة الرسمي *</label>
+                    <input
+                      type="text"
+                      required
+                      value={newSchoolName}
+                      onChange={(e) => setNewSchoolName(e.target.value)}
+                      placeholder="مثال: مدرسة الأندلس المتوسطة"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 outline-none focus:ring-2 focus:ring-emerald-500 text-xs text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-300 mb-1">المرحلة التعليمية *</label>
+                    <select
+                      value={newSchoolStage}
+                      onChange={(e) => setNewSchoolStage(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 outline-none text-xs text-white"
+                    >
+                      <option value="المرحلة المتوسطة">المرحلة المتوسطة</option>
+                      <option value="المرحلة الثانوية">المرحلة الثانوية</option>
+                      <option value="المرحلة الابتدائية">المرحلة الابتدائية</option>
+                      <option value="مجمع تعليمي">مجمع تعليمي مشترك</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-bold text-slate-300 mb-1">المنطقة التعليمية</label>
+                    <select
+                      value={newSchoolRegion}
+                      onChange={(e) => setNewSchoolRegion(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 outline-none text-xs text-white"
+                    >
+                      <option value="منطقة الرياض">منطقة الرياض</option>
+                      <option value="منطقة مكة المكرمة">منطقة مكة المكرمة</option>
+                      <option value="المنطقة الشرقية">المنطقة الشرقية</option>
+                      <option value="منطقة المدينة المنورة">منطقة المدينة المنورة</option>
+                      <option value="منطقة القصيم">منطقة القصيم</option>
+                      <option value="منطقة عسير">منطقة عسير</option>
+                      <option value="منطقة تبوك">منطقة تبوك</option>
+                      <option value="منطقة حائل">منطقة حائل</option>
+                      <option value="منطقة الحدود الشمالية">منطقة الحدود الشمالية</option>
+                      <option value="منطقة جازان">منطقة جازان</option>
+                      <option value="منطقة نجران">منطقة نجران</option>
+                      <option value="منطقة الباحة">منطقة الباحة</option>
+                      <option value="منطقة الجوف">منطقة الجوف</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-300 mb-1">المدينة</label>
+                    <input
+                      type="text"
+                      value={newSchoolCity}
+                      onChange={(e) => setNewSchoolCity(e.target.value)}
+                      placeholder="مثال: الرياض"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 outline-none focus:ring-2 focus:ring-emerald-500 text-xs text-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block font-bold text-slate-300 mb-1">اسم مقدم الطلب *</label>
+                    <input
+                      type="text"
+                      required
+                      value={newSchoolApplicantName}
+                      onChange={(e) => setNewSchoolApplicantName(e.target.value)}
+                      placeholder="اسم المعلم أو المدير"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 outline-none focus:ring-2 focus:ring-emerald-500 text-xs text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-300 mb-1">البريد الإلكتروني</label>
+                    <input
+                      type="email"
+                      value={newSchoolApplicantEmail}
+                      onChange={(e) => setNewSchoolApplicantEmail(e.target.value)}
+                      placeholder="email@school.sa"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 outline-none focus:ring-2 focus:ring-emerald-500 text-xs text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-300 mb-1">رقم الجوال للتواصل</label>
+                    <input
+                      type="tel"
+                      dir="ltr"
+                      value={newSchoolApplicantPhone}
+                      onChange={(e) => setNewSchoolApplicantPhone(e.target.value)}
+                      placeholder="05XXXXXXXX"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 outline-none focus:ring-2 focus:ring-emerald-500 text-xs text-white"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-300 mb-1">ملاحظات إضافية (اختياري)</label>
+                  <textarea
+                    rows={2}
+                    value={newSchoolNotes}
+                    onChange={(e) => setNewSchoolNotes(e.target.value)}
+                    placeholder="أي تفاصيل حول عدد الفصول أو الطلاب أو المقررات..."
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 outline-none focus:ring-2 focus:ring-emerald-500 text-xs text-white"
+                  />
+                </div>
+
+                <div className="bg-amber-500/10 border border-amber-500/30 p-2.5 rounded-xl text-[11px] text-amber-300 leading-relaxed">
+                  💡 سيتم تسجيل طلبك بحالة <strong>قيد المراجعة (Pending Review)</strong>، ومراجعته واعتماده من قبل الإدارة العامة للمنصة، وتفعيل لوحة التحكم الخاصة بالمدرسة.
+                </div>
+
+                <div className="pt-2 flex justify-end gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowGateModal(false)}
+                    className="px-4 py-2 rounded-xl border border-slate-700 text-slate-400 font-bold text-xs"
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingNewSchool}
+                    className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-xs shadow-md transition flex items-center gap-1.5"
+                  >
+                    {isSubmittingNewSchool ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    <span>إرسال طلب تسجيل المدرسة</span>
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
