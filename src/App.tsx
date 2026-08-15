@@ -506,20 +506,33 @@ export default function App() {
     );
   };
 
-  // Prefill states for AISolverView
+  // Prefill states for AISolverView & SmartTeacherView
   const [solverQuestion, setSolverQuestion] = useState('');
+  const [teacherSubject, setTeacherSubject] = useState('العلوم');
+  const [teacherGrade, setTeacherGrade] = useState('الصف الثالث المتوسط');
+  const [teacherTopic, setTeacherTopic] = useState('');
+  const [teacherMode, setTeacherMode] = useState<'explain' | 'quiz' | 'summary'>('explain');
 
   const handleOpenSolverForHomework = (hw: HomeworkAssignment) => {
     setSolverQuestion(`حل واجب ${hw.subject}: ${hw.title}. ${hw.description}`);
     setActiveTab('solver');
   };
 
-  const handleSelectTopicForSolver = (text: string) => {
+  const handleSelectTopicForSolver = (text: string, subject?: string, grade?: string) => {
     setSolverQuestion(text);
     setActiveTab('solver');
   };
 
-  const handleSelectTopicForTeacher = () => {
+  const handleSelectTopicForTeacher = (
+    subject: string,
+    grade: string,
+    topic?: string,
+    mode: 'explain' | 'quiz' | 'summary' = 'explain'
+  ) => {
+    setTeacherSubject(subject);
+    setTeacherGrade(grade);
+    setTeacherTopic(topic || '');
+    setTeacherMode(mode);
     setActiveTab('smart-teacher');
   };
 
@@ -801,14 +814,33 @@ export default function App() {
             )}
 
             {activeTab === 'smart-teacher' && (
-              <SmartTeacherView centralBooks={centralBooks} />
+              <SmartTeacherView
+                centralBooks={centralBooks}
+                initialSubject={teacherSubject}
+                initialGrade={teacherGrade}
+                initialTopic={teacherTopic}
+                initialMode={teacherMode}
+              />
             )}
 
             {activeTab === 'curriculum' && (
               <CurriculumLibraryView
                 centralBooks={centralBooks}
+                currentUser={currentUser}
+                currentRole={currentRole}
+                currentSchool={currentSchool}
+                studentProfile={studentProfile}
                 onSelectTopicForSolver={handleSelectTopicForSolver}
                 onSelectTopicForTeacher={handleSelectTopicForTeacher}
+                onOpenHomeworkCreator={(lessonTitle, subject, grade, pageStart) => {
+                  setActiveTab('homework');
+                }}
+                onCreateQuizForLesson={(lessonTitle, subject, grade) => {
+                  setActiveTab('quiz');
+                }}
+                onCreateStudyRoomForLesson={(lessonTitle, subject, grade) => {
+                  setActiveTab('messaging');
+                }}
               />
             )}
 

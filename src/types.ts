@@ -345,6 +345,20 @@ export interface CurriculumUnit {
   chapters: CurriculumChapter[];
 }
 
+export interface StudentBookProgress {
+  bookId: string;
+  studentId: string;
+  schoolId?: string;
+  completedLessons: number;
+  totalLessons: number;
+  progressPercentage: number;
+  lastLessonId?: string;
+  lastLessonTitle?: string;
+  lastUnitTitle?: string;
+  lastOpenedAt?: string;
+  lessonStatusMap?: Record<string, 'not_started' | 'in_progress' | 'completed'>;
+}
+
 export interface CurriculumBook {
   id: string;
   title: string; // book_name or title
@@ -358,8 +372,10 @@ export interface CurriculumBook {
   semester?: 1 | 2 | 3;
   academic_year?: string;
   editionYear: string;
+  cover_image_url?: string;
   book_pdf_url?: string;
   source_url?: string;
+  source_type?: 'official_moe' | 'ien_portal' | 'madrasati' | 'school_upload';
   portalUrl?: string;
   is_active: boolean;
   coverIcon: string;
@@ -604,16 +620,106 @@ export interface CounselingReferral {
   actionPlan?: string;
 }
 
+export type CircularCategoryType = 'إداري' | 'أكاديمي' | 'اختبار' | 'حضور' | 'نشاط' | 'طارئ' | 'عام';
+export type CircularAudienceType = 'all_school' | 'teachers' | 'students' | 'parents' | 'specific_grade' | 'specific_class' | 'specific_users';
+
+export interface CircularReadConfirmation {
+  id: string;
+  circularId: string;
+  userId: string;
+  userName: string;
+  userRole: UserRole;
+  confirmedAt?: string;
+  viewedAt?: string;
+  isConfirmed: boolean;
+}
+
 export interface SchoolCircular {
   id: string;
+  schoolId?: string;
   title: string;
-  number: string;
-  date: string;
+  number?: string;
+  circularNumber?: string;
+  date?: string;
   priority: 'عاجل' | 'هام' | 'عادي';
-  category: 'إداري' | 'اختبارات' | 'نشاط مالي/مدرسي' | 'إرشاد طلابي';
+  category?: 'إداري' | 'اختبارات' | 'نشاط مالي/مدرسي' | 'إرشاد طلابي';
+  circularType?: CircularCategoryType;
   content: string;
-  targetAudience: 'الجميع' | 'الطلاب' | 'أولياء الأمور' | 'المعلمون';
+  targetAudience: 'الجميع' | 'الطلاب' | 'أولياء الأمور' | 'المعلمون' | CircularAudienceType;
+  targetGrade?: string;
+  targetClass?: string;
+  targetUserIds?: string[];
+  publishDate?: string;
+  expiryDate?: string;
+  requiresReadConfirmation?: boolean;
   attachedDocName?: string;
+  attachmentName?: string;
+  attachmentUrl?: string;
+  createdById?: string;
+  createdByName?: string;
+  createdByRole?: string;
+  stats?: {
+    totalRecipients: number;
+    viewedCount: number;
+    confirmedCount: number;
+    pendingCount: number;
+  };
+  isAcknowledgedByMe?: boolean;
+  acknowledgedAt?: string;
+  createdAt?: string;
+}
+
+export interface SchoolAnnouncement {
+  id: string;
+  schoolId: string;
+  title: string;
+  content: string;
+  targetAudience: 'all_school' | 'teachers' | 'students' | 'parents' | 'class';
+  gradeName?: string;
+  classroomName?: string;
+  createdById: string;
+  createdByName: string;
+  createdByRole: UserRole;
+  isUrgent?: boolean;
+  createdAt: string;
+}
+
+export interface ParentStudentRelation {
+  id: string;
+  schoolId: string;
+  parentId: string;
+  studentId: string;
+  relationshipType: 'أب' | 'أم' | 'ولي أمر' | 'كفيل';
+  parentName?: string;
+  parentPhone?: string;
+  studentName?: string;
+  studentGrade?: string;
+  studentClass?: string;
+  createdAt: string;
+}
+
+export interface TeacherAssignment {
+  id: string;
+  schoolId: string;
+  teacherId: string;
+  teacherName: string;
+  subjectName: string;
+  gradeName: string;
+  classroomName: string;
+  classId?: string;
+  createdAt?: string;
+}
+
+export interface AppNotification {
+  id: string;
+  schoolId: string;
+  userId: string;
+  title: string;
+  body: string;
+  type: 'message' | 'circular' | 'announcement' | 'ticket' | 'homework' | 'quiz' | 'note' | 'room';
+  targetId?: string;
+  isRead: boolean;
+  createdAt: string;
 }
 
 // -------------------------------------------------------------

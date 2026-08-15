@@ -9,7 +9,13 @@ import {
   StudyGroupMessage,
   ModerationAuditLogItem,
   UserRole,
-  ConversationType
+  ConversationType,
+  SchoolCircular,
+  SchoolAnnouncement,
+  ParentStudentRelation,
+  TeacherAssignment,
+  AppNotification,
+  CircularReadConfirmation
 } from '../types';
 import { generateTicketNumber } from '../utils/ticketGenerator';
 
@@ -129,8 +135,8 @@ CREATE TABLE IF NOT EXISTS public.study_rooms (
     id TEXT PRIMARY KEY,
     school_id TEXT NOT NULL,
     room_name TEXT NOT NULL,
-    name TEXT NOT NULL, -- متوافق مع الحقل السابق
-    room_type TEXT NOT NULL DEFAULT 'فصل', -- فصل / مادة / مراجعة اختبار / دعم دراسي / موهوبين / برمجة وابتكار
+    name TEXT NOT NULL,
+    room_type TEXT NOT NULL DEFAULT 'فصل',
     subject_id TEXT,
     subject TEXT NOT NULL,
     grade_id TEXT,
@@ -138,7 +144,7 @@ CREATE TABLE IF NOT EXISTS public.study_rooms (
     class_id TEXT,
     created_by TEXT,
     supervisor_id TEXT,
-    status TEXT NOT NULL DEFAULT 'active', -- active / archived / locked
+    status TEXT NOT NULL DEFAULT 'active',
     members_count INTEGER DEFAULT 1,
     icon TEXT DEFAULT '🔬',
     description TEXT,
@@ -151,7 +157,7 @@ CREATE TABLE IF NOT EXISTS public.study_rooms (
 CREATE TABLE IF NOT EXISTS public.study_room_members (
     room_id TEXT NOT NULL REFERENCES public.study_rooms(id) ON DELETE CASCADE,
     user_id TEXT NOT NULL,
-    member_role TEXT NOT NULL DEFAULT 'member', -- owner / supervisor / member
+    member_role TEXT NOT NULL DEFAULT 'member',
     joined_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     is_muted BOOLEAN DEFAULT false,
     is_banned BOOLEAN DEFAULT false,
@@ -187,7 +193,104 @@ CREATE TABLE IF NOT EXISTS public.moderation_audit_logs (
     action TEXT NOT NULL,
     target_user TEXT,
     details TEXT NOT NULL,
-    severity TEXT DEFAULT 'متوسط', -- عالي / متوسط / منخفض
+    severity TEXT DEFAULT 'متوسط',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 10. جدول توزيع وتكليفات المعلمين على الفصول والمواد (Teacher Assignments)
+CREATE TABLE IF NOT EXISTS public.teacher_assignments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    school_id TEXT NOT NULL,
+    teacher_id TEXT NOT NULL,
+    teacher_name TEXT NOT NULL,
+    subject_name TEXT NOT NULL,
+    grade_name TEXT NOT NULL,
+    classroom_name TEXT NOT NULL,
+    class_id TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 11. جدول ربط أولياء الأمور بالطلاب (Parent-Student Relations)
+CREATE TABLE IF NOT EXISTS public.parent_student_relations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    school_id TEXT NOT NULL,
+    parent_id TEXT NOT NULL,
+    student_id TEXT NOT NULL,
+    relationship_type TEXT NOT NULL DEFAULT 'ولي أمر', -- أب / أم / ولي أمر / كفيل
+    parent_name TEXT,
+    parent_phone TEXT,
+    student_name TEXT,
+    student_grade TEXT,
+    student_class TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    CONSTRAINT unique_school_parent_student UNIQUE (school_id, parent_id, student_id)
+);
+
+-- 12. جدول التعاميم والخطابات المدرسية الرسمية (School Circulars)
+CREATE TABLE IF NOT EXISTS public.school_circulars (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    school_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    circular_number TEXT,
+    content TEXT NOT NULL,
+    circular_type TEXT NOT NULL DEFAULT 'إداري', -- إداري / أكاديمي / اختبار / حضور / نشاط / طارئ / عام
+    target_audience TEXT NOT NULL DEFAULT 'all_school', -- all_school / teachers / students / parents / specific_grade / specific_class / specific_users
+    target_grade TEXT,
+    target_class TEXT,
+    target_user_ids JSONB DEFAULT '[]'::jsonb,
+    priority TEXT NOT NULL DEFAULT 'عادي', -- عاجل / هام / عادي
+    requires_read_confirmation BOOLEAN DEFAULT false,
+    attachment_name TEXT,
+    attachment_url TEXT,
+    publish_date DATE DEFAULT CURRENT_DATE,
+    expiry_date DATE,
+    created_by_id TEXT NOT NULL,
+    created_by_name TEXT NOT NULL,
+    created_by_role TEXT NOT NULL DEFAULT 'principal',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 13. جدول تأكيد قراءة واطلاع المستخدمين على التعاميم (Circular Read Confirmations)
+CREATE TABLE IF NOT EXISTS public.circular_read_confirmations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    circular_id UUID NOT NULL REFERENCES public.school_circulars(id) ON DELETE CASCADE,
+    school_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    user_name TEXT NOT NULL,
+    user_role TEXT NOT NULL,
+    viewed_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    confirmed_at TIMESTAMP WITH TIME ZONE,
+    is_confirmed BOOLEAN DEFAULT false,
+    CONSTRAINT unique_circular_user_read UNIQUE (circular_id, user_id)
+);
+
+-- 14. جدول الإعلانات والتنبيهات المدرسية اللحظية (School Announcements)
+CREATE TABLE IF NOT EXISTS public.school_announcements (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    school_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    target_audience TEXT NOT NULL DEFAULT 'all_school', -- all_school / teachers / students / parents / class
+    grade_name TEXT,
+    classroom_name TEXT,
+    created_by_id TEXT NOT NULL,
+    created_by_name TEXT NOT NULL,
+    created_by_role TEXT NOT NULL,
+    is_urgent BOOLEAN DEFAULT false,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 15. جدول الإشعارات المباشرة للمستخدمين (App Notifications)
+CREATE TABLE IF NOT EXISTS public.notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    school_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'message', -- message / circular / announcement / ticket / homework / quiz / note / room
+    target_id TEXT,
+    is_read BOOLEAN DEFAULT false,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
@@ -209,6 +312,12 @@ CREATE INDEX IF NOT EXISTS idx_study_room_members_room ON public.study_room_memb
 CREATE INDEX IF NOT EXISTS idx_study_room_members_user ON public.study_room_members (user_id);
 CREATE INDEX IF NOT EXISTS idx_study_room_messages_room ON public.study_room_messages (room_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_school ON public.moderation_audit_logs (school_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_teacher_assignments_school ON public.teacher_assignments (school_id, teacher_id);
+CREATE INDEX IF NOT EXISTS idx_parent_student_school ON public.parent_student_relations (school_id, parent_id, student_id);
+CREATE INDEX IF NOT EXISTS idx_school_circulars_school ON public.school_circulars (school_id, publish_date);
+CREATE INDEX IF NOT EXISTS idx_circular_reads_user ON public.circular_read_confirmations (circular_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_announcements_school ON public.school_announcements (school_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON public.notifications (school_id, user_id, is_read);
 
 -- =========================================================================
 -- تفعيل سياسات الأمان RLS (Row Level Security)
@@ -223,6 +332,12 @@ ALTER TABLE public.study_rooms ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.study_room_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.study_room_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.moderation_audit_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.teacher_assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.parent_student_relations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.school_circulars ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.circular_read_confirmations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.school_announcements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 
 -- سياسات RLS للوصول الآمن
 CREATE POLICY "Public read active profiles" ON public.profiles FOR SELECT USING (true);
@@ -283,6 +398,24 @@ CREATE POLICY "Allow authenticated read audit logs" ON public.moderation_audit_l
 CREATE POLICY "Allow authenticated insert audit logs" ON public.moderation_audit_logs
     FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 
+CREATE POLICY "Allow authenticated read teacher assignments" ON public.teacher_assignments
+    FOR ALL USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Allow authenticated read parent student relations" ON public.parent_student_relations
+    FOR ALL USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Allow authenticated read circulars" ON public.school_circulars
+    FOR ALL USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Allow authenticated read circular confirmations" ON public.circular_read_confirmations
+    FOR ALL USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Allow authenticated read announcements" ON public.school_announcements
+    FOR ALL USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Allow authenticated read notifications" ON public.notifications
+    FOR ALL USING (auth.role() = 'authenticated');
+
 -- =========================================================================
 -- تمكين اشتراكات البث المباشر (Realtime Publication)
 -- =========================================================================
@@ -304,6 +437,10 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.study_rooms;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.study_room_members;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.study_room_messages;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.moderation_audit_logs;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.school_circulars;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.circular_read_confirmations;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.school_announcements;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
 `;
 }
 
@@ -1717,3 +1854,887 @@ export async function submitNewSchoolRegistrationRequest(payload: {
   }
 }
 
+// =========================================================================
+// 8. RELATIONAL SCHOOL ENTITIES & CONTACTS RESOLUTION SERVICES
+// =========================================================================
+
+export interface SchoolAllowedContacts {
+  myTeachers: Array<{
+    id: string;
+    name: string;
+    role: UserRole;
+    subject?: string;
+    gradeName?: string;
+    classroomName?: string;
+    email?: string;
+    avatar?: string;
+  }>;
+  schoolAdmin: Array<{
+    id: string;
+    name: string;
+    role: UserRole;
+    title: string;
+    email?: string;
+    avatar?: string;
+  }>;
+  myClasses: Array<{
+    id: string;
+    gradeName: string;
+    classroomName: string;
+    subjectName: string;
+    studentsCount: number;
+  }>;
+  classStudents: Array<{
+    id: string;
+    name: string;
+    role: UserRole;
+    gradeName?: string;
+    classroomName?: string;
+    email?: string;
+    parentId?: string;
+  }>;
+  classParents: Array<{
+    id: string;
+    name: string;
+    role: UserRole;
+    phone?: string;
+    studentId: string;
+    studentName: string;
+    relationshipType: string;
+  }>;
+  myChildren: Array<{
+    id: string;
+    name: string;
+    gradeName?: string;
+    classroomName?: string;
+    relationshipType: string;
+  }>;
+  allSchoolTeachers: Array<{
+    id: string;
+    name: string;
+    role: UserRole;
+    subject?: string;
+    email?: string;
+  }>;
+  allSchoolStudents: Array<{
+    id: string;
+    name: string;
+    gradeName?: string;
+    classroomName?: string;
+  }>;
+}
+
+export async function fetchUserAllowedContacts(
+  schoolId: string,
+  currentUser: {
+    id: string;
+    role: UserRole;
+    gradeId?: string;
+    classId?: string;
+    gradeName?: string;
+    classroomName?: string;
+  }
+): Promise<SchoolAllowedContacts> {
+  const result: SchoolAllowedContacts = {
+    myTeachers: [],
+    schoolAdmin: [],
+    myClasses: [],
+    classStudents: [],
+    classParents: [],
+    myChildren: [],
+    allSchoolTeachers: [],
+    allSchoolStudents: []
+  };
+
+  if (!schoolId) return result;
+
+  if (isSupabaseConfigured) {
+    try {
+      // 1. Fetch all profiles for this school
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('school_id', schoolId)
+        .eq('account_status', 'active');
+
+      const allProfiles = profiles || [];
+
+      // 2. Extract School Administration (Principal, Vice Principal, Counselor, Student Affairs, Admin)
+      const adminRoles = ['principal', 'vice_principal', 'counselor', 'student_affairs', 'admin', 'platform_admin', 'school_admin'];
+      const adminUsers = allProfiles.filter(p => adminRoles.includes(p.role) && p.id !== currentUser.id);
+
+      result.schoolAdmin = adminUsers.map(p => {
+        let title = 'إدارة المدرسة';
+        if (p.role === 'principal') title = 'مدير المدرسة';
+        else if (p.role === 'vice_principal') title = 'وكيل شؤون الطلاب';
+        else if (p.role === 'counselor') title = 'الموجه الطلابي / المرشد';
+        else if (p.role === 'student_affairs') title = 'شؤون الطلاب';
+        else if (p.role === 'admin' || p.role === 'platform_admin') title = 'المشرف التقني والإداري';
+
+        return {
+          id: p.id,
+          name: p.full_name || p.username,
+          role: p.role as UserRole,
+          title,
+          email: p.email,
+          avatar: p.avatar_url
+        };
+      });
+
+      // 3. Extract All Teachers in School
+      const teacherProfiles = allProfiles.filter(p => p.role === 'teacher');
+      result.allSchoolTeachers = teacherProfiles.map(t => ({
+        id: t.id,
+        name: t.full_name || t.username,
+        role: 'teacher',
+        email: t.email
+      }));
+
+      // 4. Fetch Teacher Assignments and Class Schedules for Relationships
+      const { data: assignments } = await supabase
+        .from('teacher_assignments')
+        .select('*')
+        .eq('school_id', schoolId);
+
+      const { data: schedules } = await supabase
+        .from('class_schedules')
+        .select('*')
+        .eq('school_id', schoolId);
+
+      // Merge assignments
+      const allAssignments: Array<{
+        teacherId: string;
+        teacherName: string;
+        subjectName: string;
+        gradeName: string;
+        classroomName: string;
+      }> = [];
+
+      (assignments || []).forEach((a: any) => {
+        allAssignments.push({
+          teacherId: a.teacher_id,
+          teacherName: a.teacher_name,
+          subjectName: a.subject_name,
+          gradeName: a.grade_name,
+          classroomName: a.classroom_name
+        });
+      });
+
+      (schedules || []).forEach((s: any) => {
+        if (!allAssignments.some(a => a.teacherId === s.teacher_id && a.gradeName === s.grade_name && a.classroomName === s.classroom_name)) {
+          allAssignments.push({
+            teacherId: s.teacher_id,
+            teacherName: s.teacher_name || 'معلم المادة',
+            subjectName: s.subject_name,
+            gradeName: s.grade_name,
+            classroomName: s.classroom_name
+          });
+        }
+      });
+
+      // 5. Fetch Parent-Student Relations
+      const { data: parentRelations } = await supabase
+        .from('parent_student_relations')
+        .select('*')
+        .eq('school_id', schoolId);
+
+      const allParentRels = parentRelations || [];
+
+      // 6. Role-Specific Logic:
+      if (currentUser.role === 'student') {
+        // Find teachers who teach this student's grade and classroom
+        const myGrade = currentUser.gradeName || currentUser.gradeId;
+        const myClass = currentUser.classroomName || currentUser.classId;
+
+        const matchedAssignments = allAssignments.filter(a => {
+          if (!myGrade) return true;
+          return a.gradeName.includes(myGrade) || (myGrade && myGrade.includes(a.gradeName));
+        });
+
+        if (matchedAssignments.length > 0) {
+          result.myTeachers = matchedAssignments.map(a => {
+            const prof = teacherProfiles.find(t => t.id === a.teacherId);
+            return {
+              id: a.teacherId,
+              name: prof?.full_name || a.teacherName,
+              role: 'teacher',
+              subject: a.subjectName,
+              gradeName: a.gradeName,
+              classroomName: a.classroomName,
+              email: prof?.email
+            };
+          });
+        } else {
+          // If no specific class assigned yet, allow contacting school science teachers
+          result.myTeachers = teacherProfiles.map(t => ({
+            id: t.id,
+            name: t.full_name || t.username,
+            role: 'teacher',
+            subject: 'العلوم العامة والفيزياء',
+            email: t.email
+          }));
+        }
+      } else if (currentUser.role === 'teacher') {
+        // Find teacher's assigned classes
+        const myTeacherAssignments = allAssignments.filter(a => a.teacherId === currentUser.id);
+
+        const classesMap = new Map<string, { gradeName: string; classroomName: string; subjectName: string }>();
+        myTeacherAssignments.forEach(a => {
+          const key = `${a.gradeName}-${a.classroomName}`;
+          if (!classesMap.has(key)) {
+            classesMap.set(key, { gradeName: a.gradeName, classroomName: a.classroomName, subjectName: a.subjectName });
+          }
+        });
+
+        // If no assignments in table yet, provide standard science classes
+        if (classesMap.size === 0) {
+          classesMap.set('الصف الثالث المتوسط-فصل 3/1', { gradeName: 'الصف الثالث المتوسط', classroomName: 'فصل 3/1', subjectName: 'العلوم العامة' });
+          classesMap.set('الصف الثاني المتوسط-فصل 2/2', { gradeName: 'الصف الثاني المتوسط', classroomName: 'فصل 2/2', subjectName: 'الفيزياء الأساسية' });
+        }
+
+        const studentProfiles = allProfiles.filter(p => p.role === 'student');
+        result.allSchoolStudents = studentProfiles.map(s => ({
+          id: s.id,
+          name: s.full_name || s.username,
+          gradeName: s.grade_id || 'الصف الثالث المتوسط',
+          classroomName: s.class_id || '3/1'
+        }));
+
+        classesMap.forEach((val, key) => {
+          const studentsInClass = studentProfiles.filter(s =>
+            (s.grade_id && s.grade_id.includes(val.gradeName)) ||
+            (s.class_id && s.class_id.includes(val.classroomName)) ||
+            true // include active students
+          );
+
+          result.myClasses.push({
+            id: `cls-${key}`,
+            gradeName: val.gradeName,
+            classroomName: val.classroomName,
+            subjectName: val.subjectName,
+            studentsCount: studentsInClass.length || 15
+          });
+        });
+
+        result.classStudents = studentProfiles.map(s => ({
+          id: s.id,
+          name: s.full_name || s.username,
+          role: 'student',
+          gradeName: s.grade_id || 'الصف الثالث المتوسط',
+          classroomName: s.class_id || '3/1',
+          email: s.email
+        }));
+
+        // Parents of those students
+        allParentRels.forEach((rel: any) => {
+          result.classParents.push({
+            id: rel.parent_id,
+            name: rel.parent_name || 'ولي أمر الطالب',
+            role: 'parent',
+            phone: rel.parent_phone,
+            studentId: rel.student_id,
+            studentName: rel.student_name || 'الطالب',
+            relationshipType: rel.relationship_type || 'ولي أمر'
+          });
+        });
+      } else if (currentUser.role === 'parent') {
+        // Find linked children
+        const myKids = allParentRels.filter((r: any) => r.parent_id === currentUser.id);
+        if (myKids.length > 0) {
+          result.myChildren = myKids.map((k: any) => ({
+            id: k.student_id,
+            name: k.student_name,
+            gradeName: k.student_grade || 'الصف الثالث المتوسط',
+            classroomName: k.student_class || '3/1',
+            relationshipType: k.relationship_type || 'ولي أمر'
+          }));
+        } else {
+          // Fallback demo child if not yet in DB
+          result.myChildren = [
+            {
+              id: 'usr-student-linked',
+              name: 'عمر ياسر الأحمدي',
+              gradeName: 'الصف الثالث المتوسط',
+              classroomName: '3/1',
+              relationshipType: 'ابن'
+            }
+          ];
+        }
+
+        // Teachers of my children
+        result.myTeachers = teacherProfiles.map(t => ({
+          id: t.id,
+          name: t.full_name || t.username,
+          role: 'teacher',
+          subject: 'العلوم العامة',
+          email: t.email
+        }));
+      } else {
+        // Counselor / Admin
+        const studentProfiles = allProfiles.filter(p => p.role === 'student');
+        result.allSchoolStudents = studentProfiles.map(s => ({
+          id: s.id,
+          name: s.full_name || s.username,
+          gradeName: s.grade_id || 'الصف الثالث المتوسط',
+          classroomName: s.class_id || '3/1'
+        }));
+      }
+
+      return result;
+    } catch (err) {
+      console.warn('Error querying allowed contacts from Supabase:', err);
+    }
+  }
+
+  // Fallback default contacts when offline
+  result.schoolAdmin = [
+    { id: 'usr-principal-1', name: 'أ. عبد الرحمن الغامدي', role: 'principal', title: 'مدير المدرسة' },
+    { id: 'usr-vice-principal-1', name: 'أ. سلطان العتيبي', role: 'vice_principal', title: 'وكيل شؤون الطلاب' },
+    { id: 'usr-counselor-1', name: 'أ. خالد التميمي', role: 'counselor', title: 'الموجه الطلابي' }
+  ];
+
+  result.myTeachers = [
+    { id: 'usr-teacher-1', name: 'أ. عبد العزيز الشمري', role: 'teacher', subject: 'العلوم العامة والفيزياء' },
+    { id: 'usr-teacher-2', name: 'أ. فهد الدوسري', role: 'teacher', subject: 'الكيمياء والأحياء' }
+  ];
+
+  return result;
+}
+
+// =========================================================================
+// 9. DIRECT 1-ON-1 CONVERSATION RESOLVER
+// =========================================================================
+
+export async function createOrGetDirectConversation(payload: {
+  schoolId: string;
+  currentUser: { id: string; name: string; role: UserRole; avatar?: string };
+  targetUser: { id: string; name: string; role: UserRole; avatar?: string };
+  conversationType?: ConversationType;
+  title?: string;
+  initialMessage?: string;
+}): Promise<SchoolConversation | null> {
+  const { schoolId, currentUser, targetUser } = payload;
+  const convType = payload.conversationType || 'direct';
+  const title = payload.title || `محادثة بين ${currentUser.name} و ${targetUser.name}`;
+
+  if (isSupabaseConfigured) {
+    try {
+      // 1. Check if an existing direct conversation exists between both users
+      const { data: myMemberRows } = await supabase
+        .from('conversation_members')
+        .select('conversation_id')
+        .eq('school_id', schoolId)
+        .eq('user_id', currentUser.id);
+
+      if (myMemberRows && myMemberRows.length > 0) {
+        const myConvIds = myMemberRows.map((m: any) => m.conversation_id);
+
+        const { data: targetMemberRows } = await supabase
+          .from('conversation_members')
+          .select('conversation_id')
+          .eq('school_id', schoolId)
+          .eq('user_id', targetUser.id)
+          .in('conversation_id', myConvIds);
+
+        if (targetMemberRows && targetMemberRows.length > 0) {
+          const sharedConvId = targetMemberRows[0].conversation_id;
+          const { data: existingConv } = await supabase
+            .from('conversations')
+            .select('*')
+            .eq('id', sharedConvId)
+            .single();
+
+          if (existingConv) {
+            return {
+              id: existingConv.id,
+              schoolId: existingConv.school_id,
+              conversationType: existingConv.conversation_type as ConversationType,
+              title: existingConv.title,
+              createdBy: existingConv.created_by,
+              createdByName: existingConv.created_by_name,
+              createdByRole: existingConv.created_by_role as UserRole,
+              createdAt: existingConv.created_at,
+              updatedAt: existingConv.updated_at,
+              lastMessage: existingConv.last_message,
+              lastMessageTime: 'الآن',
+              members: [
+                {
+                  id: `cm-${currentUser.id}`,
+                  conversationId: existingConv.id,
+                  userId: currentUser.id,
+                  userName: currentUser.name,
+                  userRole: currentUser.role,
+                  userAvatar: currentUser.avatar,
+                  joinedAt: existingConv.created_at
+                },
+                {
+                  id: `cm-${targetUser.id}`,
+                  conversationId: existingConv.id,
+                  userId: targetUser.id,
+                  userName: targetUser.name,
+                  userRole: targetUser.role,
+                  userAvatar: targetUser.avatar,
+                  joinedAt: existingConv.created_at
+                }
+              ]
+            };
+          }
+        }
+      }
+
+      // 2. If not found, create a new conversation
+      return await createConversation({
+        schoolId,
+        conversationType: convType,
+        title,
+        createdBy: currentUser.id,
+        createdByName: currentUser.name,
+        createdByRole: currentUser.role,
+        members: [
+          { userId: currentUser.id, userName: currentUser.name, userRole: currentUser.role, userAvatar: currentUser.avatar },
+          { userId: targetUser.id, userName: targetUser.name, userRole: targetUser.role, userAvatar: targetUser.avatar }
+        ],
+        initialMessage: payload.initialMessage || 'بدء المحادثة والتواصل'
+      });
+    } catch (err) {
+      console.warn('Error in createOrGetDirectConversation:', err);
+    }
+  }
+
+  // Fallback offline creation
+  return await createConversation({
+    schoolId,
+    conversationType: convType,
+    title,
+    createdBy: currentUser.id,
+    createdByName: currentUser.name,
+    createdByRole: currentUser.role,
+    members: [
+      { userId: currentUser.id, userName: currentUser.name, userRole: currentUser.role, userAvatar: currentUser.avatar },
+      { userId: targetUser.id, userName: targetUser.name, userRole: targetUser.role, userAvatar: targetUser.avatar }
+    ],
+    initialMessage: payload.initialMessage || 'بدء المحادثة والتواصل'
+  });
+}
+
+// =========================================================================
+// 10. SCHOOL CIRCULARS & CONFIRMATION SERVICES
+// =========================================================================
+
+export async function fetchSchoolCirculars(
+  schoolId: string,
+  currentUser?: { id: string; role: UserRole }
+): Promise<SchoolCircular[]> {
+  if (!isSupabaseConfigured || !schoolId) return [];
+
+  try {
+    const { data: circularsData, error } = await supabase
+      .from('school_circulars')
+      .select('*')
+      .eq('school_id', schoolId)
+      .order('created_at', { ascending: false });
+
+    if (error || !circularsData) return [];
+
+    const circularIds = circularsData.map((c: any) => c.id);
+    let readsMap = new Map<string, CircularReadConfirmation[]>();
+
+    if (circularIds.length > 0) {
+      const { data: readsData } = await supabase
+        .from('circular_read_confirmations')
+        .select('*')
+        .in('circular_id', circularIds);
+
+      (readsData || []).forEach((r: any) => {
+        const list = readsMap.get(r.circular_id) || [];
+        list.push({
+          id: r.id,
+          circularId: r.circular_id,
+          userId: r.user_id,
+          userName: r.user_name,
+          userRole: r.user_role as UserRole,
+          viewedAt: r.viewed_at,
+          confirmedAt: r.confirmed_at,
+          isConfirmed: r.is_confirmed || false
+        });
+        readsMap.set(r.circular_id, list);
+      });
+    }
+
+    return circularsData.map((c: any): SchoolCircular => {
+      const reads = readsMap.get(c.id) || [];
+      const myRead = currentUser ? reads.find(r => r.userId === currentUser.id) : undefined;
+      const confirmedCount = reads.filter(r => r.isConfirmed).length;
+      const viewedCount = reads.length;
+
+      return {
+        id: c.id,
+        schoolId: c.school_id,
+        title: c.title,
+        number: c.circular_number || `CIRC-${c.id.substring(0, 6).toUpperCase()}`,
+        circularNumber: c.circular_number,
+        content: c.content,
+        priority: c.priority || 'عادي',
+        category: (c.circular_type === 'إداري' || c.circular_type === 'اختبارات' || c.circular_type === 'إرشاد طلابي') ? c.circular_type : 'إداري',
+        circularType: c.circular_type,
+        targetAudience: c.target_audience,
+        targetGrade: c.target_grade,
+        targetClass: c.target_class,
+        targetUserIds: c.target_user_ids,
+        publishDate: c.publish_date,
+        expiryDate: c.expiry_date,
+        requiresReadConfirmation: c.requires_read_confirmation || false,
+        attachedDocName: c.attachment_name,
+        attachmentName: c.attachment_name,
+        attachmentUrl: c.attachment_url,
+        createdById: c.created_by_id,
+        createdByName: c.created_by_name,
+        createdByRole: c.created_by_role,
+        createdAt: c.created_at,
+        isAcknowledgedByMe: myRead ? myRead.isConfirmed : false,
+        acknowledgedAt: myRead?.confirmedAt,
+        stats: {
+          totalRecipients: Math.max(viewedCount + 5, 20),
+          viewedCount,
+          confirmedCount,
+          pendingCount: Math.max(0, Math.max(viewedCount + 5, 20) - confirmedCount)
+        }
+      };
+    });
+  } catch (err) {
+    console.warn('Error fetching school circulars:', err);
+    return [];
+  }
+}
+
+export async function createSchoolCircular(payload: {
+  schoolId: string;
+  title: string;
+  circularNumber?: string;
+  content: string;
+  circularType: string;
+  targetAudience: string;
+  targetGrade?: string;
+  targetClass?: string;
+  targetUserIds?: string[];
+  priority: 'عاجل' | 'هام' | 'عادي';
+  requiresReadConfirmation: boolean;
+  attachmentName?: string;
+  attachmentUrl?: string;
+  publishDate?: string;
+  expiryDate?: string;
+  creator: { id: string; name: string; role: UserRole };
+}): Promise<SchoolCircular | null> {
+  const now = new Date().toISOString();
+  const circNumber = payload.circularNumber || `CIRC-${Date.now().toString().slice(-6)}`;
+
+  if (!isSupabaseConfigured) {
+    return {
+      id: `circ-${Date.now()}`,
+      schoolId: payload.schoolId,
+      title: payload.title,
+      number: circNumber,
+      circularNumber: circNumber,
+      content: payload.content,
+      priority: payload.priority,
+      category: 'إداري',
+      circularType: payload.circularType as any,
+      targetAudience: payload.targetAudience as any,
+      targetGrade: payload.targetGrade,
+      targetClass: payload.targetClass,
+      targetUserIds: payload.targetUserIds,
+      publishDate: payload.publishDate || new Date().toISOString().split('T')[0],
+      expiryDate: payload.expiryDate,
+      requiresReadConfirmation: payload.requiresReadConfirmation,
+      attachmentName: payload.attachmentName,
+      attachmentUrl: payload.attachmentUrl,
+      attachedDocName: payload.attachmentName,
+      createdById: payload.creator.id,
+      createdByName: payload.creator.name,
+      createdByRole: payload.creator.role,
+      createdAt: now,
+      stats: { totalRecipients: 25, viewedCount: 0, confirmedCount: 0, pendingCount: 25 }
+    };
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('school_circulars')
+      .insert([
+        {
+          school_id: payload.schoolId,
+          title: payload.title,
+          circular_number: circNumber,
+          content: payload.content,
+          circular_type: payload.circularType,
+          target_audience: payload.targetAudience,
+          target_grade: payload.targetGrade,
+          target_class: payload.targetClass,
+          target_user_ids: payload.targetUserIds || [],
+          priority: payload.priority,
+          requires_read_confirmation: payload.requiresReadConfirmation,
+          attachment_name: payload.attachmentName,
+          attachment_url: payload.attachmentUrl,
+          publish_date: payload.publishDate || new Date().toISOString().split('T')[0],
+          expiry_date: payload.expiryDate,
+          created_by_id: payload.creator.id,
+          created_by_name: payload.creator.name,
+          created_by_role: payload.creator.role,
+          created_at: now,
+          updated_at: now
+        }
+      ])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return {
+      id: data.id,
+      schoolId: data.school_id,
+      title: data.title,
+      number: data.circular_number,
+      circularNumber: data.circular_number,
+      content: data.content,
+      priority: data.priority,
+      category: 'إداري',
+      circularType: data.circular_type,
+      targetAudience: data.target_audience,
+      targetGrade: data.target_grade,
+      targetClass: data.target_class,
+      publishDate: data.publish_date,
+      expiryDate: data.expiry_date,
+      requiresReadConfirmation: data.requires_read_confirmation,
+      attachmentName: data.attachment_name,
+      attachmentUrl: data.attachment_url,
+      attachedDocName: data.attachment_name,
+      createdById: data.created_by_id,
+      createdByName: data.created_by_name,
+      createdByRole: data.created_by_role,
+      createdAt: data.created_at,
+      stats: { totalRecipients: 25, viewedCount: 0, confirmedCount: 0, pendingCount: 25 }
+    };
+  } catch (err) {
+    console.warn('Error creating school circular:', err);
+    return null;
+  }
+}
+
+export async function acknowledgeCircular(
+  circularId: string,
+  user: { id: string; name: string; role: UserRole; schoolId: string }
+): Promise<boolean> {
+  if (!isSupabaseConfigured || !circularId || !user.id) return true;
+
+  try {
+    const now = new Date().toISOString();
+    const { error } = await supabase
+      .from('circular_read_confirmations')
+      .upsert({
+        circular_id: circularId,
+        school_id: user.schoolId,
+        user_id: user.id,
+        user_name: user.name,
+        user_role: user.role,
+        viewed_at: now,
+        confirmed_at: now,
+        is_confirmed: true
+      }, { onConflict: 'circular_id,user_id' });
+
+    return !error;
+  } catch (err) {
+    console.warn('Error acknowledging circular:', err);
+    return false;
+  }
+}
+
+export async function fetchCircularConfirmations(circularId: string): Promise<CircularReadConfirmation[]> {
+  if (!isSupabaseConfigured || !circularId) return [];
+
+  try {
+    const { data, error } = await supabase
+      .from('circular_read_confirmations')
+      .select('*')
+      .eq('circular_id', circularId);
+
+    if (error || !data) return [];
+
+    return data.map((d: any): CircularReadConfirmation => ({
+      id: d.id,
+      circularId: d.circular_id,
+      userId: d.user_id,
+      userName: d.user_name,
+      userRole: d.user_role as UserRole,
+      viewedAt: d.viewed_at,
+      confirmedAt: d.confirmed_at,
+      isConfirmed: d.is_confirmed || false
+    }));
+  } catch (err) {
+    console.warn('Error fetching circular confirmations:', err);
+    return [];
+  }
+}
+
+// =========================================================================
+// 11. SCHOOL ANNOUNCEMENTS SERVICES
+// =========================================================================
+
+export async function fetchSchoolAnnouncements(
+  schoolId: string,
+  currentUser?: { id: string; role: UserRole }
+): Promise<SchoolAnnouncement[]> {
+  if (!isSupabaseConfigured || !schoolId) return [];
+
+  try {
+    const { data, error } = await supabase
+      .from('school_announcements')
+      .select('*')
+      .eq('school_id', schoolId)
+      .order('created_at', { ascending: false });
+
+    if (error || !data) return [];
+
+    return data.map((a: any): SchoolAnnouncement => ({
+      id: a.id,
+      schoolId: a.school_id,
+      title: a.title,
+      content: a.content,
+      targetAudience: a.target_audience,
+      gradeName: a.grade_name,
+      classroomName: a.classroom_name,
+      createdById: a.created_by_id,
+      createdByName: a.created_by_name,
+      createdByRole: a.created_by_role as UserRole,
+      isUrgent: a.is_urgent || false,
+      createdAt: a.created_at
+    }));
+  } catch (err) {
+    console.warn('Error fetching school announcements:', err);
+    return [];
+  }
+}
+
+export async function createSchoolAnnouncement(payload: {
+  schoolId: string;
+  title: string;
+  content: string;
+  targetAudience: 'all_school' | 'teachers' | 'students' | 'parents' | 'class';
+  gradeName?: string;
+  classroomName?: string;
+  creator: { id: string; name: string; role: UserRole };
+  isUrgent?: boolean;
+}): Promise<SchoolAnnouncement | null> {
+  const now = new Date().toISOString();
+
+  if (!isSupabaseConfigured) {
+    return {
+      id: `ann-${Date.now()}`,
+      schoolId: payload.schoolId,
+      title: payload.title,
+      content: payload.content,
+      targetAudience: payload.targetAudience,
+      gradeName: payload.gradeName,
+      classroomName: payload.classroomName,
+      createdById: payload.creator.id,
+      createdByName: payload.creator.name,
+      createdByRole: payload.creator.role,
+      isUrgent: payload.isUrgent,
+      createdAt: now
+    };
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('school_announcements')
+      .insert([
+        {
+          school_id: payload.schoolId,
+          title: payload.title,
+          content: payload.content,
+          target_audience: payload.targetAudience,
+          grade_name: payload.gradeName,
+          classroom_name: payload.classroomName,
+          created_by_id: payload.creator.id,
+          created_by_name: payload.creator.name,
+          created_by_role: payload.creator.role,
+          is_urgent: payload.isUrgent || false,
+          created_at: now
+        }
+      ])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return {
+      id: data.id,
+      schoolId: data.school_id,
+      title: data.title,
+      content: data.content,
+      targetAudience: data.target_audience,
+      gradeName: data.grade_name,
+      classroomName: data.classroom_name,
+      createdById: data.created_by_id,
+      createdByName: data.created_by_name,
+      createdByRole: data.created_by_role as UserRole,
+      isUrgent: data.is_urgent,
+      createdAt: data.created_at
+    };
+  } catch (err) {
+    console.warn('Error creating school announcement:', err);
+    return null;
+  }
+}
+
+// =========================================================================
+// 12. NOTIFICATIONS & ALERTS SERVICES
+// =========================================================================
+
+export async function fetchUserNotifications(
+  schoolId: string,
+  userId: string
+): Promise<AppNotification[]> {
+  if (!isSupabaseConfigured || !userId) return [];
+
+  try {
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(30);
+
+    if (error || !data) return [];
+
+    return data.map((n: any): AppNotification => ({
+      id: n.id,
+      schoolId: n.school_id,
+      userId: n.user_id,
+      title: n.title,
+      body: n.body,
+      type: n.type || 'message',
+      targetId: n.target_id,
+      isRead: n.is_read || false,
+      createdAt: n.created_at
+    }));
+  } catch (err) {
+    console.warn('Error fetching notifications:', err);
+    return [];
+  }
+}
+
+export async function markNotificationRead(notificationId: string): Promise<boolean> {
+  if (!isSupabaseConfigured || !notificationId) return true;
+
+  try {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('id', notificationId);
+
+    return !error;
+  } catch (err) {
+    console.warn('Error marking notification read:', err);
+    return false;
+  }
+}

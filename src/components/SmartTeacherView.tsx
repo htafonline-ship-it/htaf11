@@ -25,16 +25,42 @@ import {
 
 interface SmartTeacherViewProps {
   centralBooks?: CurriculumBook[];
+  initialSubject?: string;
+  initialGrade?: string;
+  initialTopic?: string;
+  initialMode?: 'explain' | 'quiz' | 'summary';
 }
 
-export const SmartTeacherView: React.FC<SmartTeacherViewProps> = ({ centralBooks }) => {
-  const [subject, setSubject] = useState('العلوم');
-  const [grade, setGrade] = useState('الصف الثالث المتوسط');
+export const SmartTeacherView: React.FC<SmartTeacherViewProps> = ({
+  centralBooks,
+  initialSubject,
+  initialGrade,
+  initialTopic,
+  initialMode = 'explain'
+}) => {
+  const [subject, setSubject] = useState(initialSubject || 'العلوم');
+  const [grade, setGrade] = useState(initialGrade || 'الصف الثالث المتوسط');
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [userAnswers, setUserAnswers] = useState<Record<string, number>>({});
   const [showHomeworkModal, setShowHomeworkModal] = useState(false);
   const [active3DModal, setActive3DModal] = useState<ThreeDModelInfo | null>(null);
+
+  // Sync initial props if changed
+  useEffect(() => {
+    if (initialSubject) setSubject(initialSubject);
+    if (initialGrade) setGrade(initialGrade);
+    if (initialTopic) {
+      const modeText =
+        initialMode === 'quiz'
+          ? `أريد اختباراً تفاعلياً يقيس فهمي لدرس: ${initialTopic}`
+          : initialMode === 'summary'
+          ? `لخص لي المفاهيم والقوانين الرئيسية في درس: ${initialTopic}`
+          : `اشرح لي بالتفصيل درس: ${initialTopic} من كتاب ${initialSubject || subject}`;
+
+      setInput(modeText);
+    }
+  }, [initialSubject, initialGrade, initialTopic, initialMode]);
 
   const [messages, setMessages] = useState<TeacherChatMessage[]>([
     {

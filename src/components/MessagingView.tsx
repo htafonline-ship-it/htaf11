@@ -12,7 +12,10 @@ import {
   DirectMessage,
   AuthUser,
   School as SchoolType,
-  UserProfile
+  UserProfile,
+  SchoolCircular,
+  SchoolAnnouncement,
+  CircularReadConfirmation
 } from '../types';
 import { AddHomeworkModal } from './AddHomeworkModal';
 import {
@@ -43,7 +46,16 @@ import {
   submitNewSchoolRegistrationRequest,
   MessagingEligibilityResult,
   InvitationLookupResult,
-  MESSAGING_ACCESS_DENIED_MESSAGE
+  MESSAGING_ACCESS_DENIED_MESSAGE,
+  fetchUserAllowedContacts,
+  SchoolAllowedContacts,
+  createOrGetDirectConversation,
+  fetchSchoolCirculars,
+  createSchoolCircular,
+  acknowledgeCircular,
+  fetchCircularConfirmations,
+  fetchSchoolAnnouncements,
+  createSchoolAnnouncement
 } from '../lib/messagingService';
 import { supabase, isSupabaseConfigured, fetchSchoolProfiles } from '../lib/supabase';
 import {
@@ -54,6 +66,7 @@ import {
   Trash2,
   ShieldAlert,
   Paperclip,
+  CheckCircle,
   CheckCircle2,
   Clock,
   Sparkles,
@@ -122,7 +135,7 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
   onOpenLoginModal,
   onSchoolJoined
 }) => {
-  const [activeTab, setActiveTab] = useState<'tickets' | 'groups' | 'direct'>('tickets');
+  const [activeTab, setActiveTab] = useState<'direct' | 'circulars' | 'announcements' | 'tickets' | 'groups'>('direct');
 
   // School ID for multi-tenant isolation
   const activeSchoolId = currentSchool?.id || currentUser?.schoolId || 'al-namouthajya';
@@ -156,6 +169,56 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
   const [newSchoolApplicantPhone, setNewSchoolApplicantPhone] = useState('');
   const [newSchoolNotes, setNewSchoolNotes] = useState('');
   const [isSubmittingNewSchool, setIsSubmittingNewSchool] = useState(false);
+
+  // -------------------------------------------------------------
+  // 0.1 RELATIONAL SCHOOL ENTITIES & ALLOWED CONTACTS STATE
+  // -------------------------------------------------------------
+  const [allowedContacts, setAllowedContacts] = useState<SchoolAllowedContacts>({
+    myTeachers: [],
+    schoolAdmin: [],
+    myClasses: [],
+    classStudents: [],
+    classParents: [],
+    myChildren: [],
+    allSchoolTeachers: [],
+    allSchoolStudents: []
+  });
+  const [activeDirectSubView, setActiveDirectSubView] = useState<'conversations' | 'my_teachers' | 'my_classes' | 'school_admin' | 'my_children'>('conversations');
+  const [selectedClassFilter, setSelectedClassFilter] = useState<string>('all');
+  const [isStartingDirectChat, setIsStartingDirectChat] = useState(false);
+
+  // -------------------------------------------------------------
+  // 0.2 SCHOOL CIRCULARS & READ CONFIRMATION STATE
+  // -------------------------------------------------------------
+  const [circularsList, setCircularsList] = useState<SchoolCircular[]>([]);
+  const [selectedCircular, setSelectedCircular] = useState<SchoolCircular | null>(null);
+  const [showNewCircularModal, setShowNewCircularModal] = useState(false);
+  const [newCircTitle, setNewCircTitle] = useState('');
+  const [newCircNumber, setNewCircNumber] = useState('');
+  const [newCircContent, setNewCircContent] = useState('');
+  const [newCircCategory, setNewCircCategory] = useState<'إداري' | 'اختبارات' | 'إرشاد طلابي'>('إداري');
+  const [newCircPriority, setNewCircPriority] = useState<'عاجل' | 'هام' | 'عادي'>('عادي');
+  const [newCircAudience, setNewCircAudience] = useState<'all_school' | 'teachers' | 'students' | 'parents' | 'specific_grade'>('all_school');
+  const [newCircGrade, setNewCircGrade] = useState('');
+  const [newCircClass, setNewCircClass] = useState('');
+  const [newCircRequiresAck, setNewCircRequiresAck] = useState(true);
+  const [newCircAttachment, setNewCircAttachment] = useState<{ file: File; name: string } | null>(null);
+  const [isCreatingCircular, setIsCreatingCircular] = useState(false);
+  const [isAcknowledging, setIsAcknowledging] = useState(false);
+  const [circularConfirmations, setCircularConfirmations] = useState<CircularReadConfirmation[]>([]);
+
+  // -------------------------------------------------------------
+  // 0.3 SCHOOL ANNOUNCEMENTS STATE
+  // -------------------------------------------------------------
+  const [announcementsList, setAnnouncementsList] = useState<SchoolAnnouncement[]>([]);
+  const [showNewAnnouncementModal, setShowNewAnnouncementModal] = useState(false);
+  const [newAnnTitle, setNewAnnTitle] = useState('');
+  const [newAnnContent, setNewAnnContent] = useState('');
+  const [newAnnAudience, setNewAnnAudience] = useState<'all_school' | 'teachers' | 'students' | 'parents' | 'class'>('all_school');
+  const [newAnnGrade, setNewAnnGrade] = useState('');
+  const [newAnnClass, setNewAnnClass] = useState('');
+  const [newAnnIsUrgent, setNewAnnIsUrgent] = useState(false);
+  const [isCreatingAnnouncement, setIsCreatingAnnouncement] = useState(false);
 
   // Check Eligibility on Mount or User Change
   const runEligibilityCheck = async () => {
@@ -421,7 +484,7 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
   const selectedConversationRef = useRef<SchoolConversation | null>(selectedConversation);
   const selectedTicketRef = useRef<SupportTicket | null>(selectedTicket);
   const selectedGroupRef = useRef<StudyGroup | null>(selectedGroup);
-  const activeTabRef = useRef<'tickets' | 'groups' | 'direct'>(activeTab);
+  const activeTabRef = useRef<'direct' | 'circulars' | 'announcements' | 'tickets' | 'groups'>(activeTab);
   const effectiveUserIdRef = useRef<string>(effectiveUserId);
 
   useEffect(() => {
@@ -480,6 +543,7 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
   const replyFileInputRef = useRef<HTMLInputElement>(null);
   const directFileInputRef = useRef<HTMLInputElement>(null);
   const studyFileInputRef = useRef<HTMLInputElement>(null);
+  const circularFileInputRef = useRef<HTMLInputElement>(null);
 
   // -------------------------------------------------------------
   // DATA LOADING & REALTIME SUBSCRIPTIONS
@@ -515,69 +579,27 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
           setSelectedConversation(dbConvs[0]);
           markConversationAsRead(dbConvs[0].id, effectiveUserId, activeSchoolId);
         }
-      } else {
-        // Fallback default conversation if empty
-        const sampleConvs: SchoolConversation[] = [
-          {
-            id: 'conv-counselor-1',
-            schoolId: activeSchoolId,
-            conversationType: 'counseling',
-            title: 'استشارة فردية مع المرشد الطلابي',
-            createdBy: 'counselor-1',
-            createdByName: 'أ. خالد التميمي (الموجه الطلابي)',
-            createdByRole: 'counselor',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            lastMessage: 'مرحباً بك، يسعدني تقديم أي توجيه أو دعم أكاديمي ونفسي.',
-            lastMessageTime: 'اليوم',
-            members: [
-              {
-                id: 'cm-1',
-                conversationId: 'conv-counselor-1',
-                userId: effectiveUserId,
-                userName: effectiveUserName,
-                userRole: currentRole,
-                joinedAt: new Date().toISOString(),
-                lastReadAt: new Date().toISOString()
-              },
-              {
-                id: 'cm-2',
-                conversationId: 'conv-counselor-1',
-                userId: 'counselor-1',
-                userName: 'أ. خالد التميمي (الموجه الطلابي)',
-                userRole: 'counselor',
-                joinedAt: new Date().toISOString()
-              }
-            ]
-          },
-          {
-            id: 'conv-teacher-1',
-            schoolId: activeSchoolId,
-            conversationType: 'direct',
-            title: 'قناة متابعة واجبات العلوم - الأستاذ عبد العزيز',
-            createdBy: 'teacher-1',
-            createdByName: 'أ. عبد العزيز الشمري',
-            createdByRole: 'teacher',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            lastMessage: 'تم نشر نموذج حل تجربة الكيمياء للمراجعة.',
-            lastMessageTime: 'أمس',
-            members: [
-              {
-                id: 'cm-3',
-                conversationId: 'conv-teacher-1',
-                userId: effectiveUserId,
-                userName: effectiveUserName,
-                userRole: currentRole,
-                joinedAt: new Date().toISOString(),
-                lastReadAt: new Date().toISOString()
-              }
-            ]
-          }
-        ];
-        setConversations(sampleConvs);
-        if (!selectedConversation) setSelectedConversation(sampleConvs[0]);
       }
+
+      // 4. Allowed Contacts based on real database relationships
+      const contacts = await fetchUserAllowedContacts(activeSchoolId, {
+        id: effectiveUserId,
+        role: currentRole,
+        gradeName: initialStudentProfile?.grade || 'الصف الثالث المتوسط',
+        classroomName: '3/1'
+      });
+      setAllowedContacts(contacts);
+
+      // 5. School Circulars
+      const circs = await fetchSchoolCirculars(activeSchoolId, { id: effectiveUserId, role: currentRole });
+      setCircularsList(circs);
+      if (circs.length > 0 && !selectedCircular) {
+        setSelectedCircular(circs[0]);
+      }
+
+      // 6. School Announcements
+      const anns = await fetchSchoolAnnouncements(activeSchoolId, { id: effectiveUserId, role: currentRole });
+      setAnnouncementsList(anns);
     } catch (err) {
       console.warn('Error loading messaging data:', err);
     } finally {
@@ -1219,6 +1241,153 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
   };
 
   // -------------------------------------------------------------
+  // HANDLERS: DIRECT CHAT WITH REAL CONTACTS
+  // -------------------------------------------------------------
+  const handleStartDirectChatWithUser = async (target: {
+    id: string;
+    name: string;
+    role: UserRole;
+    avatar?: string;
+    title?: string;
+  }) => {
+    if (!checkEligibilityOrOpenGate()) return;
+    setIsStartingDirectChat(true);
+    try {
+      const conv = await createOrGetDirectConversation({
+        schoolId: activeSchoolId,
+        currentUser: { id: effectiveUserId, name: effectiveUserName, role: currentRole },
+        targetUser: { id: target.id, name: target.name, role: target.role, avatar: target.avatar },
+        title: `محادثة مع ${target.name} (${target.title || (target.role === 'teacher' ? 'معلم' : target.role === 'parent' ? 'ولي أمر' : target.role === 'student' ? 'طالب' : 'إدارة')})`,
+        initialMessage: 'مرحباً، أود التواصل معك بخصوص الشأن المدرسي والتعليمي.'
+      });
+      if (conv) {
+        setConversations(prev => {
+          const exists = prev.some(c => c.id === conv.id);
+          return exists ? prev : [conv, ...prev];
+        });
+        setSelectedConversation(conv);
+        setActiveTab('direct');
+        setActiveDirectSubView('conversations');
+      }
+    } catch (err) {
+      console.warn('Error starting direct conversation:', err);
+    } finally {
+      setIsStartingDirectChat(false);
+    }
+  };
+
+  // -------------------------------------------------------------
+  // HANDLERS: SCHOOL CIRCULARS & CONFIRMATION
+  // -------------------------------------------------------------
+  const handleCreateCircularSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!checkEligibilityOrOpenGate()) return;
+    if (!newCircTitle.trim() || !newCircContent.trim()) return;
+
+    setIsCreatingCircular(true);
+    let attUrl: string | undefined;
+    let attName: string | undefined;
+
+    if (newCircAttachment) {
+      const up = await uploadMessageAttachment(newCircAttachment.file, activeSchoolId);
+      if (up) {
+        attUrl = up.url;
+        attName = up.name;
+      }
+    }
+
+    const created = await createSchoolCircular({
+      schoolId: activeSchoolId,
+      title: newCircTitle.trim(),
+      circularNumber: newCircNumber.trim() || undefined,
+      content: newCircContent.trim(),
+      circularType: newCircCategory,
+      targetAudience: newCircAudience,
+      targetGrade: newCircGrade || undefined,
+      targetClass: newCircClass || undefined,
+      priority: newCircPriority,
+      requiresReadConfirmation: newCircRequiresAck,
+      attachmentName: attName,
+      attachmentUrl: attUrl,
+      creator: { id: effectiveUserId, name: effectiveUserName, role: currentRole }
+    });
+
+    setIsCreatingCircular(false);
+
+    if (created) {
+      setCircularsList(prev => [created, ...prev]);
+      setSelectedCircular(created);
+      setShowNewCircularModal(false);
+      setNewCircTitle('');
+      setNewCircContent('');
+      setNewCircNumber('');
+      setNewCircAttachment(null);
+    }
+  };
+
+  const handleAcknowledgeCircularSubmit = async (circularId: string) => {
+    if (!checkEligibilityOrOpenGate()) return;
+    setIsAcknowledging(true);
+    const ok = await acknowledgeCircular(circularId, {
+      id: effectiveUserId,
+      name: effectiveUserName,
+      role: currentRole,
+      schoolId: activeSchoolId
+    });
+    setIsAcknowledging(false);
+    if (ok) {
+      setCircularsList(prev => prev.map(c => {
+        if (c.id === circularId) {
+          return {
+            ...c,
+            isAcknowledgedByMe: true,
+            acknowledgedAt: new Date().toISOString(),
+            stats: c.stats ? { ...c.stats, confirmedCount: (c.stats.confirmedCount || 0) + 1 } : undefined
+          };
+        }
+        return c;
+      }));
+      if (selectedCircular?.id === circularId) {
+        setSelectedCircular(prev => prev ? {
+          ...prev,
+          isAcknowledgedByMe: true,
+          acknowledgedAt: new Date().toISOString(),
+          stats: prev.stats ? { ...prev.stats, confirmedCount: (prev.stats.confirmedCount || 0) + 1 } : undefined
+        } : null);
+      }
+    }
+  };
+
+  // -------------------------------------------------------------
+  // HANDLERS: SCHOOL ANNOUNCEMENTS
+  // -------------------------------------------------------------
+  const handleCreateAnnouncementSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!checkEligibilityOrOpenGate()) return;
+    if (!newAnnTitle.trim() || !newAnnContent.trim()) return;
+
+    setIsCreatingAnnouncement(true);
+    const created = await createSchoolAnnouncement({
+      schoolId: activeSchoolId,
+      title: newAnnTitle.trim(),
+      content: newAnnContent.trim(),
+      targetAudience: newAnnAudience,
+      gradeName: newAnnGrade || undefined,
+      classroomName: newAnnClass || undefined,
+      creator: { id: effectiveUserId, name: effectiveUserName, role: currentRole },
+      isUrgent: newAnnIsUrgent
+    });
+
+    setIsCreatingAnnouncement(false);
+    if (created) {
+      setAnnouncementsList(prev => [created, ...prev]);
+      setShowNewAnnouncementModal(false);
+      setNewAnnTitle('');
+      setNewAnnContent('');
+    }
+  };
+
+  // -------------------------------------------------------------
   // HANDLERS: STUDY ROOMS & AI CONTENT GUARD
   // -------------------------------------------------------------
   const handleSendGroupMessageSubmit = async (e: React.FormEvent) => {
@@ -1441,6 +1610,53 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
           {/* Tab Switcher */}
           <div className="bg-white/10 backdrop-blur-md p-1.5 rounded-2xl border border-white/20 flex flex-wrap items-center gap-1">
             <button
+              onClick={() => setActiveTab('direct')}
+              className={`px-3 sm:px-4 py-2.5 rounded-xl text-xs font-black transition flex items-center gap-2 relative ${
+                activeTab === 'direct'
+                  ? 'bg-white text-indigo-900 shadow-md'
+                  : 'text-white hover:bg-white/10'
+              }`}
+            >
+              <MessageCircle className="w-4 h-4 text-indigo-600" />
+              <span>المحادثات والتواصل ({conversations.length})</span>
+              {conversations.some(c => isConvUnread(c)) && (
+                <span className="flex h-2 w-2 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab('circulars')}
+              className={`px-3 sm:px-4 py-2.5 rounded-xl text-xs font-black transition flex items-center gap-2 ${
+                activeTab === 'circulars'
+                  ? 'bg-white text-amber-900 shadow-md'
+                  : 'text-white hover:bg-white/10'
+              }`}
+            >
+              <FileText className="w-4 h-4 text-amber-600" />
+              <span>التعاميم والاطلاع ({circularsList.length})</span>
+              {circularsList.some(c => c.requiresReadConfirmation && !c.isAcknowledgedByMe) && (
+                <span className="bg-amber-400 text-amber-950 text-[9px] font-black px-1.5 py-0.2 rounded-full">
+                  تأكيد مطلوب
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab('announcements')}
+              className={`px-3 sm:px-4 py-2.5 rounded-xl text-xs font-black transition flex items-center gap-2 ${
+                activeTab === 'announcements'
+                  ? 'bg-white text-blue-900 shadow-md'
+                  : 'text-white hover:bg-white/10'
+              }`}
+            >
+              <Bell className="w-4 h-4 text-blue-600" />
+              <span>الإعلانات ({announcementsList.length})</span>
+            </button>
+
+            <button
               onClick={() => setActiveTab('tickets')}
               className={`px-3 sm:px-4 py-2.5 rounded-xl text-xs font-black transition flex items-center gap-2 ${
                 activeTab === 'tickets'
@@ -1453,28 +1669,10 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
             </button>
 
             <button
-              onClick={() => setActiveTab('direct')}
-              className={`px-3 sm:px-4 py-2.5 rounded-xl text-xs font-black transition flex items-center gap-2 relative ${
-                activeTab === 'direct'
-                  ? 'bg-white text-indigo-900 shadow-md'
-                  : 'text-white hover:bg-white/10'
-              }`}
-            >
-              <MessageCircle className="w-4 h-4 text-indigo-600" />
-              <span>المحادثات المباشرة ({conversations.length})</span>
-              {conversations.some(c => isConvUnread(c)) && (
-                <span className="flex h-2 w-2 relative">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
-                </span>
-              )}
-            </button>
-
-            <button
               onClick={() => setActiveTab('groups')}
               className={`px-3 sm:px-4 py-2.5 rounded-xl text-xs font-black transition flex items-center gap-2 ${
                 activeTab === 'groups'
-                  ? 'bg-white text-blue-900 shadow-md'
+                  ? 'bg-white text-emerald-900 shadow-md'
                   : 'text-white hover:bg-white/10'
               }`}
             >
@@ -1873,12 +2071,12 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
       {/* ========================================================================= */}
       {activeTab === 'direct' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* Left: Conversations List */}
+          {/* Left: Conversations & School Directory */}
           <div className="lg:col-span-4 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
                 <MessageCircle className="w-5 h-5 text-indigo-600" />
-                <span>قنوات التواصل الرسمية ({conversations.length})</span>
+                <span>المحادثات والتواصل المدرسي</span>
               </h3>
 
               <button
@@ -1890,77 +2088,330 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
                 className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3 py-1.5 rounded-xl shadow-sm flex items-center gap-1.5 transition"
               >
                 <PlusCircle className="w-4 h-4" />
-                <span>بدء محادثة</span>
+                <span>محادثة جديدة</span>
               </button>
             </div>
 
-            <div className="space-y-3 max-h-[580px] overflow-y-auto pr-1">
-              {conversations.map((conv) => {
-                const isSelected = selectedConversation?.id === conv.id;
+            {/* Role-Specific Sub-Navigation Pills */}
+            <div className="bg-slate-100 p-1 rounded-2xl flex items-center gap-1 text-[11px] font-bold overflow-x-auto">
+              <button
+                onClick={() => setActiveDirectSubView('conversations')}
+                className={`px-3 py-1.5 rounded-xl transition whitespace-nowrap ${
+                  activeDirectSubView === 'conversations'
+                    ? 'bg-white text-indigo-900 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                المحادثات ({conversations.length})
+              </button>
 
-                const getRoleBadge = (type: string) => {
-                  switch (type) {
-                    case 'counseling':
-                      return <span className="bg-purple-100 text-purple-800 text-[10px] font-bold px-2 py-0.5 rounded-full">إرشاد طلابي</span>;
-                    case 'parent_teacher':
-                      return <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full">ولي أمر ومعلم</span>;
-                    case 'administrative':
-                      return <span className="bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-0.5 rounded-full">شؤون الطلاب</span>;
-                    default:
-                      return <span className="bg-indigo-100 text-indigo-800 text-[10px] font-bold px-2 py-0.5 rounded-full">مباشر</span>;
-                  }
-                };
+              {(currentRole === 'student' || currentRole === 'counselor' || currentRole === 'admin' || currentRole === 'principal') && (
+                <button
+                  onClick={() => setActiveDirectSubView('my_teachers')}
+                  className={`px-3 py-1.5 rounded-xl transition whitespace-nowrap ${
+                    activeDirectSubView === 'my_teachers'
+                      ? 'bg-white text-indigo-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {currentRole === 'student' ? `معلموني (${allowedContacts.myTeachers.length})` : `معلمو المدرسة (${allowedContacts.myTeachers.length || allowedContacts.allSchoolTeachers.length})`}
+                </button>
+              )}
 
-                const unread = isConvUnread(conv);
+              {(currentRole === 'teacher' || currentRole === 'counselor' || currentRole === 'admin' || currentRole === 'principal') && (
+                <button
+                  onClick={() => setActiveDirectSubView('my_classes')}
+                  className={`px-3 py-1.5 rounded-xl transition whitespace-nowrap ${
+                    activeDirectSubView === 'my_classes'
+                      ? 'bg-white text-indigo-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {currentRole === 'teacher' ? 'فصولي وطلابي' : 'الطلاب والفصول'}
+                </button>
+              )}
 
-                return (
-                  <div
-                    key={conv.id}
-                    onClick={() => handleSelectConversation(conv)}
-                    className={`p-4 rounded-2xl border cursor-pointer transition space-y-2 relative ${
-                      isSelected
-                        ? 'bg-slate-900 text-white border-slate-800 shadow-xl'
-                        : unread
-                        ? 'bg-indigo-50/70 text-slate-900 border-indigo-200 hover:border-indigo-400 shadow-sm ring-1 ring-indigo-300/40'
-                        : 'bg-white text-slate-900 border-slate-200 hover:border-indigo-300 shadow-sm'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        {getRoleBadge(conv.conversationType)}
-                        {unread && !isSelected && (
-                          <span className="bg-rose-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full animate-pulse flex items-center gap-0.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-white"></span>
-                            <span>جديد</span>
+              {currentRole === 'parent' && (
+                <button
+                  onClick={() => setActiveDirectSubView('my_children')}
+                  className={`px-3 py-1.5 rounded-xl transition whitespace-nowrap ${
+                    activeDirectSubView === 'my_children'
+                      ? 'bg-white text-indigo-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  أبنائي ومعلموهم ({allowedContacts.myChildren.length})
+                </button>
+              )}
+
+              <button
+                onClick={() => setActiveDirectSubView('school_admin')}
+                className={`px-3 py-1.5 rounded-xl transition whitespace-nowrap ${
+                  activeDirectSubView === 'school_admin'
+                    ? 'bg-white text-indigo-900 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                الإدارة والتوجيه ({allowedContacts.schoolAdmin.length})
+              </button>
+            </div>
+
+            {/* 1. Subview: Active Conversations */}
+            {activeDirectSubView === 'conversations' && (
+              <div className="space-y-3 max-h-[540px] overflow-y-auto pr-1">
+                {conversations.length === 0 ? (
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 text-center text-slate-400 space-y-2">
+                    <MessageCircle className="w-8 h-8 mx-auto text-slate-300" />
+                    <p className="text-xs font-bold">لا توجد محادثات مباشرة جارية حالياً</p>
+                    <p className="text-[11px] text-slate-500">اختر من قائمة معلميك أو إدارة المدرسة لبدء محادثة رسمية موثقة</p>
+                  </div>
+                ) : (
+                  conversations.map((conv) => {
+                    const isSelected = selectedConversation?.id === conv.id;
+
+                    const getRoleBadge = (type: string) => {
+                      switch (type) {
+                        case 'counseling':
+                          return <span className="bg-purple-100 text-purple-800 text-[10px] font-bold px-2 py-0.5 rounded-full">إرشاد طلابي</span>;
+                        case 'parent_teacher':
+                          return <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full">ولي أمر ومعلم</span>;
+                        case 'administrative':
+                          return <span className="bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-0.5 rounded-full">شؤون الطلاب</span>;
+                        default:
+                          return <span className="bg-indigo-100 text-indigo-800 text-[10px] font-bold px-2 py-0.5 rounded-full">مباشر</span>;
+                      }
+                    };
+
+                    const unread = isConvUnread(conv);
+
+                    return (
+                      <div
+                        key={conv.id}
+                        onClick={() => handleSelectConversation(conv)}
+                        className={`p-4 rounded-2xl border cursor-pointer transition space-y-2 relative ${
+                          isSelected
+                            ? 'bg-slate-900 text-white border-slate-800 shadow-xl'
+                            : unread
+                            ? 'bg-indigo-50/70 text-slate-900 border-indigo-200 hover:border-indigo-400 shadow-sm ring-1 ring-indigo-300/40'
+                            : 'bg-white text-slate-900 border-slate-200 hover:border-indigo-300 shadow-sm'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            {getRoleBadge(conv.conversationType)}
+                            {unread && !isSelected && (
+                              <span className="bg-rose-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full animate-pulse flex items-center gap-0.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-white"></span>
+                                <span>جديد</span>
+                              </span>
+                            )}
+                          </div>
+                          <span className={`text-[10px] ${isSelected ? 'text-slate-400' : 'text-slate-400'}`}>
+                            {conv.lastMessageTime || 'الآن'}
                           </span>
-                        )}
+                        </div>
+
+                        <h4 className="font-extrabold text-xs leading-snug line-clamp-1">{conv.title}</h4>
+
+                        <p className={`text-[11px] line-clamp-1 ${isSelected ? 'text-slate-300' : unread ? 'text-indigo-950 font-bold' : 'text-slate-500'}`}>
+                          {conv.lastMessage || 'لا توجد رسائل سابقة'}
+                        </p>
+
+                        <div className="flex items-center justify-between text-[10px] pt-1 border-t border-slate-100/10">
+                          <span className={isSelected ? 'text-indigo-300' : 'text-indigo-600'}>
+                            {conv.createdByName || 'المشرف'}
+                          </span>
+                          {isSelected && (
+                            <span className="flex items-center gap-1 text-[9px] text-emerald-400 font-bold">
+                              <CheckCheck className="w-3 h-3" />
+                              <span>مقروءة</span>
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <span className={`text-[10px] ${isSelected ? 'text-slate-400' : 'text-slate-400'}`}>
-                        {conv.lastMessageTime || 'الآن'}
-                      </span>
+                    );
+                  })
+                )}
+              </div>
+            )}
+
+            {/* 2. Subview: My Teachers (معلموني الفعليين) */}
+            {activeDirectSubView === 'my_teachers' && (
+              <div className="space-y-3 max-h-[540px] overflow-y-auto pr-1">
+                <div className="bg-indigo-50/70 border border-indigo-100 p-3 rounded-2xl text-[11px] text-indigo-900 font-medium leading-relaxed">
+                  قائمة المعلمين المعتمدين لموادك الدراسية في هذه المدرسة. يمكنك بدء محادثة استفسار مباشرة مع أي معلم:
+                </div>
+                {allowedContacts.myTeachers.map((teacher) => (
+                  <div
+                    key={teacher.userId}
+                    className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:border-indigo-300 transition space-y-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-black text-sm shrink-0">
+                        {teacher.fullName.slice(0, 2)}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h4 className="font-extrabold text-xs text-slate-900 truncate">{teacher.fullName}</h4>
+                        <p className="text-[11px] text-indigo-600 font-bold">{teacher.subject || 'معلم مادة'}</p>
+                        {teacher.className && <span className="text-[10px] text-slate-400">{teacher.className}</span>}
+                      </div>
                     </div>
 
-                    <h4 className="font-extrabold text-xs leading-snug line-clamp-1">{conv.title}</h4>
+                    <button
+                      disabled={isStartingDirectChat}
+                      onClick={() => handleStartDirectChatWithUser({ id: teacher.userId, name: teacher.fullName, role: 'teacher', title: teacher.subject })}
+                      className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold py-2 rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      <span>بدء محادثة مع المعلم</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
 
-                    <p className={`text-[11px] line-clamp-1 ${isSelected ? 'text-slate-300' : unread ? 'text-indigo-950 font-bold' : 'text-slate-500'}`}>
-                      {conv.lastMessage || 'لا توجد رسائل سابقة'}
-                    </p>
+            {/* 3. Subview: My Classes & Students (فصولي وطلابي للمعلم) */}
+            {activeDirectSubView === 'my_classes' && (
+              <div className="space-y-3 max-h-[540px] overflow-y-auto pr-1">
+                {/* Class Filter Selector */}
+                {allowedContacts.myClasses.length > 0 && (
+                  <div className="flex items-center gap-1 overflow-x-auto pb-1">
+                    <button
+                      onClick={() => setSelectedClassFilter('all')}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold ${
+                        selectedClassFilter === 'all'
+                          ? 'bg-slate-900 text-white'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      جميع الفصول
+                    </button>
+                    {allowedContacts.myClasses.map((cls) => (
+                      <button
+                        key={cls.classId}
+                        onClick={() => setSelectedClassFilter(cls.classId)}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap ${
+                          selectedClassFilter === cls.classId
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        {cls.className} ({cls.studentCount})
+                      </button>
+                    ))}
+                  </div>
+                )}
 
-                    <div className="flex items-center justify-between text-[10px] pt-1 border-t border-slate-100/10">
-                      <span className={isSelected ? 'text-indigo-300' : 'text-indigo-600'}>
-                        {conv.createdByName || 'المشرف'}
-                      </span>
-                      {isSelected && (
-                        <span className="flex items-center gap-1 text-[9px] text-emerald-400 font-bold">
-                          <CheckCheck className="w-3 h-3" />
-                          <span>مقروءة</span>
-                        </span>
-                      )}
+                <div className="space-y-2">
+                  {allowedContacts.classStudents
+                    .filter((st) => selectedClassFilter === 'all' || st.classId === selectedClassFilter)
+                    .map((student) => (
+                      <div
+                        key={student.userId}
+                        className="bg-white border border-slate-200 rounded-2xl p-3.5 shadow-sm space-y-2"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="font-extrabold text-xs text-slate-900">{student.fullName}</h4>
+                            <p className="text-[10px] text-slate-500">{student.gradeName} - {student.className}</p>
+                          </div>
+                          <span className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200">
+                            طالب منتظم
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2 pt-1">
+                          <button
+                            disabled={isStartingDirectChat}
+                            onClick={() => handleStartDirectChatWithUser({ id: student.userId, name: student.fullName, role: 'student', title: `${student.gradeName} - ${student.className}` })}
+                            className="flex-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold py-1.5 rounded-xl border border-indigo-200 transition text-center"
+                          >
+                            محادثة الطالب
+                          </button>
+                          {student.parentId && (
+                            <button
+                              disabled={isStartingDirectChat}
+                              onClick={() => handleStartDirectChatWithUser({ id: student.parentId!, name: student.parentName || 'ولي الأمر', role: 'parent', title: `ولي أمر ${student.fullName}` })}
+                              className="flex-1 bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] font-bold py-1.5 rounded-xl border border-amber-200 transition text-center"
+                            >
+                              محادثة ولي الأمر
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* 4. Subview: My Children (أبنائي لولي الأمر) */}
+            {activeDirectSubView === 'my_children' && (
+              <div className="space-y-4 max-h-[540px] overflow-y-auto pr-1">
+                {allowedContacts.myChildren.map((child) => (
+                  <div key={child.studentId} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm space-y-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center font-black text-sm">
+                        {child.studentName.slice(0, 2)}
+                      </div>
+                      <div>
+                        <h4 className="font-extrabold text-xs text-slate-900">{child.studentName}</h4>
+                        <p className="text-[10px] text-slate-500">{child.gradeName} - {child.className}</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 pt-2 border-t border-slate-100">
+                      <p className="text-[11px] font-extrabold text-slate-700">معلمو الطالب المعتمدين:</p>
+                      {child.teachers.map((tch) => (
+                        <div key={tch.teacherId} className="flex items-center justify-between bg-slate-50 p-2 rounded-xl text-xs">
+                          <div>
+                            <span className="font-bold text-slate-800">{tch.teacherName}</span>
+                            <span className="text-[10px] text-indigo-600 block">{tch.subject}</span>
+                          </div>
+                          <button
+                            disabled={isStartingDirectChat}
+                            onClick={() => handleStartDirectChatWithUser({ id: tch.teacherId, name: tch.teacherName, role: 'teacher', title: tch.subject })}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold px-3 py-1 rounded-lg transition"
+                          >
+                            مراسلة المعلم
+                          </button>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+            )}
+
+            {/* 5. Subview: School Admin (إدارة المدرسة والموجه) */}
+            {activeDirectSubView === 'school_admin' && (
+              <div className="space-y-3 max-h-[540px] overflow-y-auto pr-1">
+                {allowedContacts.schoolAdmin.map((adm) => (
+                  <div
+                    key={adm.userId}
+                    className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm space-y-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-blue-100 text-blue-800 flex items-center justify-center font-black text-sm">
+                        {adm.fullName.slice(0, 2)}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h4 className="font-extrabold text-xs text-slate-900 truncate">{adm.fullName}</h4>
+                        <p className="text-[11px] text-blue-700 font-bold">{adm.roleTitle}</p>
+                      </div>
+                    </div>
+
+                    <button
+                      disabled={isStartingDirectChat}
+                      onClick={() => handleStartDirectChatWithUser({ id: adm.userId, name: adm.fullName, role: adm.role, title: adm.roleTitle })}
+                      className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold py-2 rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      <span>بدء محادثة رسمية</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Right: Direct Messages Feed */}
@@ -1975,7 +2426,7 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
                       <h3 className="text-base font-black text-slate-900">{selectedConversation.title}</h3>
                     </div>
                     <p className="text-xs text-slate-500">
-                      القناة الرسمية للتواصل بين {selectedConversation.createdByName || 'المشرف'} والمستخدمين المعتمدين
+                      القناة الرسمية للتواصل المعتمد بين منسوبي المدرسة
                     </p>
                   </div>
 
@@ -1995,46 +2446,53 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
 
                 {/* Messages List */}
                 <div className="flex-1 space-y-4 overflow-y-auto max-h-[360px] pr-2">
-                  {directMessages.map((msg) => {
-                    const isFromMe = msg.senderId === effectiveUserId || msg.senderRole === currentRole;
+                  {directMessages.length === 0 ? (
+                    <div className="py-12 text-center text-slate-400 space-y-2">
+                      <MessageCircle className="w-10 h-10 mx-auto text-slate-300" />
+                      <p className="text-xs font-bold">المحادثة بدأت للتو. اكتب رسالتك الأولى أدناه</p>
+                    </div>
+                  ) : (
+                    directMessages.map((msg) => {
+                      const isFromMe = msg.senderId === effectiveUserId || msg.senderRole === currentRole;
 
-                    return (
-                      <div
-                        key={msg.id}
-                        className={`p-4 rounded-2xl max-w-xl space-y-1.5 ${
-                          isFromMe
-                            ? 'ms-auto bg-indigo-600 text-white rounded-bl-none shadow-sm'
-                            : 'me-auto bg-slate-100 text-slate-800 rounded-br-none border border-slate-200/80'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-4 text-[10px] opacity-90 font-bold">
-                          <span>{msg.senderName}</span>
-                          <span>{msg.timestamp}</span>
-                        </div>
-                        <p className="text-xs leading-relaxed whitespace-pre-wrap">{msg.text}</p>
-
-                        {/* Attachment Link */}
-                        {msg.attachmentName && (
-                          <div className="mt-2 bg-black/10 backdrop-blur-sm p-2 rounded-xl flex items-center justify-between text-xs">
-                            <div className="flex items-center gap-2 truncate">
-                              <Paperclip className="w-3.5 h-3.5 shrink-0" />
-                              <span className="truncate font-bold text-[11px]">{msg.attachmentName}</span>
-                            </div>
-                            {msg.attachmentUrl && (
-                              <a
-                                href={msg.attachmentUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="underline text-[10px] shrink-0 font-extrabold ms-2 hover:text-amber-300"
-                              >
-                                معاينة
-                              </a>
-                            )}
+                      return (
+                        <div
+                          key={msg.id}
+                          className={`p-4 rounded-2xl max-w-xl space-y-1.5 ${
+                            isFromMe
+                              ? 'ms-auto bg-indigo-600 text-white rounded-bl-none shadow-sm'
+                              : 'me-auto bg-slate-100 text-slate-800 rounded-br-none border border-slate-200/80'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-4 text-[10px] opacity-90 font-bold">
+                            <span>{msg.senderName}</span>
+                            <span>{msg.timestamp}</span>
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                          <p className="text-xs leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+
+                          {/* Attachment Link */}
+                          {msg.attachmentName && (
+                            <div className="mt-2 bg-black/10 backdrop-blur-sm p-2 rounded-xl flex items-center justify-between text-xs">
+                              <div className="flex items-center gap-2 truncate">
+                                <Paperclip className="w-3.5 h-3.5 shrink-0" />
+                                <span className="truncate font-bold text-[11px]">{msg.attachmentName}</span>
+                              </div>
+                              {msg.attachmentUrl && (
+                                <a
+                                  href={msg.attachmentUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="underline text-[10px] shrink-0 font-extrabold ms-2 hover:text-amber-300"
+                                >
+                                  معاينة
+                                </a>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
 
                 {/* Direct Message Input */}
@@ -2099,7 +2557,7 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
             ) : (
               <div className="bg-slate-50 rounded-3xl p-16 text-center text-slate-400 border border-slate-200 flex flex-col items-center justify-center space-y-3">
                 <MessageCircle className="w-12 h-12 text-slate-300" />
-                <p className="text-sm font-bold">اختر محادثة مباشرة أو أنشئ قناة تواصل جديدة</p>
+                <p className="text-sm font-bold">اختر محادثة من القائمة أو اختر معلماً من دليلك للتواصل المباشر</p>
                 <button
                   onClick={() => {
                     if (checkEligibilityOrOpenGate()) {
@@ -2111,6 +2569,267 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
                   بدء محادثة رسمية
                 </button>
               </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB: SCHOOL CIRCULARS & OFFICIAL ACKNOWLEDGMENT (التعاميم والاطلاع الرسمي) */}
+      {/* ========================================================================= */}
+      {activeTab === 'circulars' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          {/* Left: Circulars List */}
+          <div className="lg:col-span-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
+                <FileText className="w-5 h-5 text-amber-600" />
+                <span>التعاميم المدرسية ({circularsList.length})</span>
+              </h3>
+
+              {(currentRole === 'teacher' || currentRole === 'counselor' || currentRole === 'admin' || currentRole === 'principal') && (
+                <button
+                  onClick={() => setShowNewCircularModal(true)}
+                  className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3 py-1.5 rounded-xl shadow-sm flex items-center gap-1.5 transition"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  <span>إصدار تعميم</span>
+                </button>
+              )}
+            </div>
+
+            <div className="space-y-3 max-h-[580px] overflow-y-auto pr-1">
+              {circularsList.length === 0 ? (
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 text-center text-slate-400 space-y-2">
+                  <FileText className="w-8 h-8 mx-auto text-slate-300" />
+                  <p className="text-xs font-bold">لا توجد تعاميم مدرسية حالياً</p>
+                </div>
+              ) : (
+                circularsList.map((circ) => {
+                  const isSelected = selectedCircular?.id === circ.id;
+
+                  const getPriorityBadge = (priority: string) => {
+                    switch (priority) {
+                      case 'عاجل':
+                        return <span className="bg-rose-100 text-rose-800 text-[10px] font-bold px-2 py-0.5 rounded-full">عاجل جداً</span>;
+                      case 'هام':
+                        return <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full">هام</span>;
+                      default:
+                        return <span className="bg-slate-100 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded-full">عادي</span>;
+                    }
+                  };
+
+                  return (
+                    <div
+                      key={circ.id}
+                      onClick={() => setSelectedCircular(circ)}
+                      className={`p-4 rounded-2xl border cursor-pointer transition space-y-2 relative ${
+                        isSelected
+                          ? 'bg-slate-900 text-white border-slate-800 shadow-xl'
+                          : 'bg-white text-slate-900 border-slate-200 hover:border-amber-300 shadow-sm'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          {getPriorityBadge(circ.priority)}
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isSelected ? 'bg-slate-800 text-amber-300' : 'bg-slate-100 text-slate-600'}`}>
+                            {circ.category}
+                          </span>
+                        </div>
+                        <span className={`text-[10px] ${isSelected ? 'text-slate-400' : 'text-slate-400'}`}>
+                          {circ.createdAt ? new Date(circ.createdAt).toLocaleDateString('ar-SA') : 'اليوم'}
+                        </span>
+                      </div>
+
+                      <h4 className="font-extrabold text-xs leading-snug line-clamp-1">{circ.title}</h4>
+
+                      <p className={`text-[11px] line-clamp-2 ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
+                        {circ.content}
+                      </p>
+
+                      <div className="flex items-center justify-between text-[10px] pt-1 border-t border-slate-100/10">
+                        <span className={isSelected ? 'text-amber-300' : 'text-amber-700 font-bold'}>
+                          رقم: {circ.circularNumber || 'رسمي'}
+                        </span>
+
+                        {circ.requiresReadConfirmation && (
+                          circ.isAcknowledgedByMe ? (
+                            <span className="flex items-center gap-1 text-[9px] text-emerald-400 font-bold">
+                              <CheckCheck className="w-3 h-3" />
+                              <span>تم الاطلاع</span>
+                            </span>
+                          ) : (
+                            <span className="bg-rose-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full animate-pulse">
+                              مطلوب تأكيد الاطلاع
+                            </span>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* Right: Selected Circular Detail */}
+          <div className="lg:col-span-8">
+            {selectedCircular ? (
+              <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-sm shadow-slate-200/50 border border-slate-200/80 space-y-6">
+                {/* Official Circular Header */}
+                <div className="border-b border-slate-100 pb-5 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1.5 bg-amber-50 text-amber-800 text-xs font-black px-3 py-1 rounded-full border border-amber-200">
+                      <FileText className="w-3.5 h-3.5 text-amber-600" />
+                      <span>تعميم إداري رسمي #{selectedCircular.circularNumber}</span>
+                    </span>
+
+                    <span className="text-xs text-slate-400 font-bold">
+                      تاريخ الإصدار: {selectedCircular.createdAt ? new Date(selectedCircular.createdAt).toLocaleDateString('ar-SA') : 'اليوم'}
+                    </span>
+                  </div>
+
+                  <h2 className="text-lg font-black text-slate-900 leading-snug">
+                    {selectedCircular.title}
+                  </h2>
+
+                  <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
+                    <span>الجهة المصدرة: <strong>{selectedCircular.createdByName || 'إدارة المدرسة'}</strong></span>
+                    <span>الفئة المستهدفة: <strong>{selectedCircular.targetAudience === 'all_school' ? 'كافة منسوبي المدرسة' : selectedCircular.targetAudience === 'teachers' ? 'المعلمون' : selectedCircular.targetAudience === 'students' ? 'الطلاب' : 'أولياء الأمور'}</strong></span>
+                  </div>
+                </div>
+
+                {/* Circular Body */}
+                <div className="bg-slate-50/70 border border-slate-100 rounded-2xl p-6 text-slate-800 leading-relaxed text-sm whitespace-pre-wrap font-medium">
+                  {selectedCircular.content}
+                </div>
+
+                {/* Attachment if present */}
+                {selectedCircular.attachmentUrl && (
+                  <div className="bg-amber-50/50 border border-amber-200/80 rounded-2xl p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Paperclip className="w-4 h-4 text-amber-700" />
+                      <span className="text-xs font-bold text-amber-950">{selectedCircular.attachmentName || 'مرفق التعميم الرسمي'}</span>
+                    </div>
+                    <a
+                      href={selectedCircular.attachmentUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition"
+                    >
+                      تحميل المرفق
+                    </a>
+                  </div>
+                )}
+
+                {/* Read Confirmation Block */}
+                {selectedCircular.requiresReadConfirmation && (
+                  <div className="border-t border-slate-100 pt-5 space-y-3">
+                    {selectedCircular.isAcknowledgedByMe ? (
+                      <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-center gap-3 text-emerald-900">
+                        <CheckCircle className="w-6 h-6 text-emerald-600 shrink-0" />
+                        <div>
+                          <p className="font-black text-xs">تم تسجيل اطلاعك الرسمي على هذا التعميم</p>
+                          <p className="text-[11px] text-emerald-700">تم توثيق إقرارك في السجل الإداري للمدرسة بنجاح</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 space-y-3">
+                        <div className="flex items-center gap-2 text-amber-900 font-extrabold text-xs">
+                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                          <span>يتطلب هذا التعميم تأكيد الاطلاع الإلزامي والالتزام بما ورد فيه</span>
+                        </div>
+                        <button
+                          disabled={isAcknowledging}
+                          onClick={() => handleAcknowledgeCircularSubmit(selectedCircular.id)}
+                          className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-extrabold text-xs py-3 rounded-xl shadow-md transition flex items-center justify-center gap-2"
+                        >
+                          <CheckCheck className="w-4 h-4" />
+                          <span>{isAcknowledging ? 'جاري تسجيل التأكيد...' : 'أقر بأني اطلعت على هذا التعميم وألتزم بمضمونه'}</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="bg-slate-50 rounded-3xl p-16 text-center text-slate-400 border border-slate-200 flex flex-col items-center justify-center space-y-3">
+                <FileText className="w-12 h-12 text-slate-300" />
+                <p className="text-sm font-bold">اختر تعميماً من القائمة للاطلاع على تفاصيله وتأكيد الاستلام</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB: SCHOOL ANNOUNCEMENTS (الإعلانات المدرسية العامة والفصلية)              */}
+      {/* ========================================================================= */}
+      {activeTab === 'announcements' && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-black text-slate-900 text-lg flex items-center gap-2">
+                <Bell className="w-5 h-5 text-blue-600" />
+                <span>لوحة الإعلانات المدرسية والفصلية</span>
+              </h3>
+              <p className="text-xs text-slate-500">أحدث التنبيهات والأخبار المعتمدة من إدارة المدرسة ومعلمي المواد</p>
+            </div>
+
+            {(currentRole === 'teacher' || currentRole === 'counselor' || currentRole === 'admin' || currentRole === 'principal') && (
+              <button
+                onClick={() => setShowNewAnnouncementModal(true)}
+                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-sm flex items-center gap-1.5 transition"
+              >
+                <PlusCircle className="w-4 h-4" />
+                <span>نشر إعلان جديد</span>
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {announcementsList.length === 0 ? (
+              <div className="col-span-full bg-slate-50 border border-slate-200 rounded-3xl p-16 text-center text-slate-400 space-y-3">
+                <Bell className="w-12 h-12 mx-auto text-slate-300" />
+                <p className="text-sm font-bold">لا توجد إعلانات مدرسية منشورة حالياً</p>
+              </div>
+            ) : (
+              announcementsList.map((ann) => (
+                <div
+                  key={ann.id}
+                  className={`bg-white rounded-3xl p-6 border shadow-sm space-y-4 flex flex-col justify-between ${
+                    ann.isUrgent ? 'border-rose-200 ring-1 ring-rose-300/50' : 'border-slate-200'
+                  }`}
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      {ann.isUrgent ? (
+                        <span className="bg-rose-100 text-rose-800 text-[10px] font-black px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-rose-600 animate-ping"></span>
+                          <span>إعلان عاجل</span>
+                        </span>
+                      ) : (
+                        <span className="bg-blue-50 text-blue-700 text-[10px] font-bold px-2.5 py-0.5 rounded-full">
+                          إعلان مدرسي
+                        </span>
+                      )}
+                      <span className="text-[10px] text-slate-400">
+                        {ann.createdAt ? new Date(ann.createdAt).toLocaleDateString('ar-SA') : 'اليوم'}
+                      </span>
+                    </div>
+
+                    <h4 className="font-black text-sm text-slate-900 leading-snug">{ann.title}</h4>
+                    <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-wrap">{ann.content}</p>
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-500">
+                    <span>الناشر: <strong>{ann.authorName || 'المشرف'}</strong></span>
+                    <span className="bg-slate-100 text-slate-700 font-bold px-2 py-0.5 rounded-md">
+                      {ann.targetAudience === 'all_school' ? 'الجميع' : ann.targetAudience === 'teachers' ? 'المعلمون' : ann.targetAudience === 'students' ? 'الطلاب' : 'الفصل'}
+                    </span>
+                  </div>
+                </div>
+              ))
             )}
           </div>
         </div>
