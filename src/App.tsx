@@ -36,6 +36,7 @@ import {
   getSupabaseUserSchoolLink,
   checkAndMatchInvitationForUser,
   fetchSupabaseSchoolBySlugOrId,
+  fetchUserProfile,
   SupabaseSchoolUserLink
 } from './lib/supabase';
 
@@ -54,6 +55,7 @@ import { UnlinkedUserGate } from './components/UnlinkedUserGate';
 import { InviteStudentModal } from './components/InviteStudentModal';
 import { AccessDeniedGate } from './components/AccessDeniedGate';
 import { SecurityToast } from './components/SecurityToast';
+import { UserProfileView } from './components/UserProfileView';
 
 import { AISolverView } from './components/AISolverView';
 import { SmartTeacherView } from './components/SmartTeacherView';
@@ -127,13 +129,28 @@ export default function App() {
       // 1. Auto match any invitations for this user email
       await checkAndMatchInvitationForUser(sessionUser.id, email, name);
 
-      // 2. Fetch school linkage and real role from school_users table
-      const link = await getSupabaseUserSchoolLink(sessionUser.id, email);
-      setUserSchoolLink(link);
+      // 2. Query both profiles and school_users tables
+      const [profile, link] = await Promise.all([
+        fetchUserProfile(sessionUser.id),
+        getSupabaseUserSchoolLink(sessionUser.id, email)
+      ]);
+
+      // Check for suspended or inactive account
+      if (profile?.account_status === 'suspended' || link?.status === 'suspended' || link?.status === 'inactive') {
+        if (supabase) await supabase.auth.signOut();
+        setCurrentUser(null);
+        setUserSchoolLink(null);
+        triggerSecurityAlert('تم إيقاف هذا الحساب من قبل الإدارة. يرجى مراجعة إدارة مدرستك.');
+        return;
+      }
+
+      const verifiedRole = (profile?.role || link?.role) as UserRole | undefined;
+      const isPlatformAdmin = verifiedRole === 'super_admin' || verifiedRole === 'platform_admin';
 
       if (link && link.status === 'active') {
-        const dbRole = (link.role as UserRole) || 'student';
-        setCurrentRole(dbRole);
+        setUserSchoolLink(link);
+        const dbRole = (link.role as UserRole) || (profile?.role as UserRole) || 'student';
+        setCurrentRole(isPlatformAdmin ? 'platform_admin' : dbRole);
 
         // Fetch assigned school
         if (link.school_id) {
@@ -161,26 +178,30 @@ export default function App() {
 
         const authUsr: AuthUser = {
           id: sessionUser.id,
-          username: email.split('@')[0],
-          fullName: link.full_name || name,
+          username: profile?.username || email.split('@')[0],
+          fullName: profile?.full_name || link.full_name || name,
           email,
-          role: dbRole,
-          schoolId: link.school_id,
-          avatarUrl: sessionUser.user_metadata?.avatar_url,
-          loginMethod: 'google'
+          role: isPlatformAdmin ? 'platform_admin' : dbRole,
+          schoolId: link.school_id || profile?.school_id,
+          classId: profile?.class_id,
+          gradeId: profile?.grade_id,
+          accountStatus: profile?.account_status || 'active',
+          avatarUrl: profile?.avatar_url || sessionUser.user_metadata?.avatar_url,
+          loginMethod: 'google',
+          badge: isPlatformAdmin ? 'مدير المنصة الرئيسي (Super Admin)' : undefined
         };
         setCurrentUser(authUsr);
 
         // Synchronize student profile with real authenticated user
         setStudentProfile(prev => ({
           ...prev,
-          name: link.full_name || name,
-          avatarUrl: sessionUser.user_metadata?.avatar_url,
-          avatar: sessionUser.user_metadata?.avatar_url ? undefined : '🧑‍🎓',
+          name: authUsr.fullName,
+          avatarUrl: authUsr.avatarUrl,
+          avatar: authUsr.avatarUrl ? undefined : (isPlatformAdmin ? '👑' : '🧑‍🎓'),
         }));
 
-        // Initial default tab by role
-        if (dbRole === 'super_admin' || dbRole === 'platform_admin' || email === 'htaf.online@gmail.com') {
+        // Initial default tab by verified database role
+        if (isPlatformAdmin) {
           setCurrentRole('platform_admin');
           setActiveTab('platform-admin');
         } else if (dbRole === 'principal' || dbRole === 'school_admin' || dbRole === 'vice_principal') {
@@ -194,35 +215,37 @@ export default function App() {
         } else {
           setActiveTab('dashboard');
         }
-      } else {
-        // Check if admin email even without explicit school_users link
-        const isPlatformAdmin = email === 'htaf.online@gmail.com' || email.startsWith('admin.') || sessionUser.id?.startsWith('usr-admin');
-        const assignedRole: UserRole = isPlatformAdmin ? 'platform_admin' : 'student';
-
+      } else if (isPlatformAdmin) {
+        // Platform Admin without school restriction
+        setUserSchoolLink(null);
         const authUsr: AuthUser = {
           id: sessionUser.id,
-          username: email.split('@')[0],
-          fullName: name,
+          username: profile?.username || email.split('@')[0],
+          fullName: profile?.full_name || name,
           email,
-          role: assignedRole,
-          avatarUrl: sessionUser.user_metadata?.avatar_url,
+          role: 'platform_admin',
+          accountStatus: 'active',
+          avatarUrl: profile?.avatar_url || sessionUser.user_metadata?.avatar_url,
           loginMethod: 'google',
-          badge: isPlatformAdmin ? 'مدير المنصة الرئيسي (Super Admin)' : undefined
+          badge: 'مدير المنصة الرئيسي (Super Admin)'
         };
         setCurrentUser(authUsr);
-        setCurrentRole(assignedRole);
-
-        if (isPlatformAdmin) {
-          setActiveTab('platform-admin');
-        }
-
-        // Synchronize student profile with authenticated Google user
-        setStudentProfile(prev => ({
-          ...prev,
-          name: name,
-          avatarUrl: sessionUser.user_metadata?.avatar_url,
-          avatar: sessionUser.user_metadata?.avatar_url ? undefined : (isPlatformAdmin ? '👑' : '🧑‍🎓')
-        }));
+        setCurrentRole('platform_admin');
+        setActiveTab('platform-admin');
+      } else {
+        // User is authenticated via Google/Supabase, but has no active school connection in database
+        setUserSchoolLink(null);
+        const authUsr: AuthUser = {
+          id: sessionUser.id,
+          username: profile?.username || email.split('@')[0],
+          fullName: profile?.full_name || name,
+          email,
+          role: (profile?.role as UserRole) || 'student',
+          accountStatus: profile?.account_status || 'pending',
+          avatarUrl: profile?.avatar_url || sessionUser.user_metadata?.avatar_url,
+          loginMethod: 'google'
+        };
+        setCurrentUser(authUsr);
       }
     } catch (err) {
       console.error('Error syncing auth session:', err);
@@ -815,16 +838,6 @@ export default function App() {
                 onSendGroupMessage={handleSendGroupMessage}
                 onDeleteGroupMessage={handleDeleteGroupMessage}
                 onAddAuditLog={(log) => setAuditLogs((prev) => [log, ...prev])}
-                onOpenLoginModal={() => setIsLoginModalOpen(true)}
-                onSchoolJoined={() => {
-                  if (currentUser?.id) {
-                    syncUserAuthWithSupabase({
-                      id: currentUser.id,
-                      email: currentUser.email,
-                      user_metadata: { full_name: currentUser.fullName, avatar_url: currentUser.avatarUrl }
-                    });
-                  }
-                }}
               />
             )}
 
@@ -833,6 +846,24 @@ export default function App() {
                 referrals={referrals}
                 onAddNote={handleAddCounselingNote}
               />
+            )}
+
+            {activeTab === 'profile' && (
+              <div className="max-w-7xl mx-auto px-4 py-8">
+                <UserProfileView
+                  currentUser={currentUser}
+                  currentSchool={currentSchool}
+                  onProfileUpdated={(updatedUser) => {
+                    setCurrentUser(updatedUser);
+                    setStudentProfile(prev => ({
+                      ...prev,
+                      name: updatedUser.fullName,
+                      avatarUrl: updatedUser.avatarUrl
+                    }));
+                  }}
+                  onLogout={handleLogout}
+                />
+              </div>
             )}
 
             {activeTab === 'dashboard' && (

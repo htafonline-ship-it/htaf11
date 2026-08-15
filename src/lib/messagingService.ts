@@ -307,27 +307,6 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.moderation_audit_logs;
 `;
 }
 
--- سياسات الوصول الشاملة للمستخدمين المصادقين
-CREATE POLICY "Allow authenticated manage support_tickets" ON public.support_tickets FOR ALL USING (auth.role() = 'authenticated' OR true);
-CREATE POLICY "Allow authenticated manage ticket_messages" ON public.ticket_messages FOR ALL USING (auth.role() = 'authenticated' OR true);
-CREATE POLICY "Allow authenticated manage conversations" ON public.conversations FOR ALL USING (auth.role() = 'authenticated' OR true);
-CREATE POLICY "Allow authenticated manage conversation_members" ON public.conversation_members FOR ALL USING (auth.role() = 'authenticated' OR true);
-CREATE POLICY "Allow authenticated manage direct_messages" ON public.direct_messages FOR ALL USING (auth.role() = 'authenticated' OR true);
-CREATE POLICY "Allow authenticated manage study_rooms" ON public.study_rooms FOR ALL USING (auth.role() = 'authenticated' OR true);
-CREATE POLICY "Allow authenticated manage study_room_messages" ON public.study_room_messages FOR ALL USING (auth.role() = 'authenticated' OR true);
-CREATE POLICY "Allow authenticated manage moderation_audit_logs" ON public.moderation_audit_logs FOR ALL USING (auth.role() = 'authenticated' OR true);
-
--- تفعيل Realtime على الجداول التفاعلية
-ALTER PUBLICATION supabase_realtime ADD TABLE public.support_tickets;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.ticket_messages;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.conversations;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.conversation_members;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.direct_messages;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.study_room_messages;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.moderation_audit_logs;
-`;
-}
-
 // =========================================================================
 // 2. SUPPORT TICKETS SERVICES
 // =========================================================================

@@ -104,26 +104,28 @@ export const DemoAccountsManager: React.FC<DemoAccountsManagerProps> = ({ school
     setFeedbackMsg(null);
 
     try {
+      const expiresAtDate = new Date(Date.now() + expiresInDays * 24 * 3600 * 1000).toISOString();
       const res = await createRealDemoAccountInSupabase({
         fullName: fullName.trim(),
         username: username.trim().toLowerCase(),
+        email: `${username.trim().toLowerCase()}@htaf.online`,
         role,
         schoolId: selectedSchoolId,
-        expiresDays: expiresInDays,
-        password: customPassword.trim() || 'DemoPass2026!'
+        expiresAt: expiresAtDate,
+        temporaryPassword: customPassword.trim() || 'DemoPass2026!'
       });
 
       if (res.success) {
         setFeedbackMsg({
           type: 'success',
-          text: `تم إنشاء حساب التجربة بنجاح: ${username.trim().toLowerCase()} (@htaf.online)`
+          text: res.message || `تم إنشاء حساب التجربة بنجاح: ${username.trim().toLowerCase()} (@htaf.online)`
         });
         setFullName('');
         loadProfiles();
       } else {
         setFeedbackMsg({
           type: 'error',
-          text: res.error || 'تعذر إنشاء حساب التجربة. تحقق من اتصال Supabase.'
+          text: res.message || 'تعذر إنشاء حساب التجربة. تحقق من اتصال Supabase.'
         });
       }
     } catch (err: any) {
@@ -134,7 +136,7 @@ export const DemoAccountsManager: React.FC<DemoAccountsManagerProps> = ({ school
   };
 
   const handleToggleStatus = async (userId: string, currentStatus: string) => {
-    const newStatus = currentStatus === 'active' ? 'disabled' : 'active';
+    const newStatus: 'active' | 'suspended' = currentStatus === 'active' ? 'suspended' : 'active';
     const ok = await toggleUserAccountStatus(userId, newStatus);
     if (ok) {
       setProfiles(prev => prev.map(p => p.id === userId ? { ...p, accountStatus: newStatus } : p));

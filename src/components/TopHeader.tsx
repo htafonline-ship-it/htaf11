@@ -17,7 +17,8 @@ import {
   Crown,
   Bell,
   ScanLine,
-  MapPin
+  MapPin,
+  User
 } from 'lucide-react';
 
 interface TopHeaderProps {
@@ -64,7 +65,8 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
     counseling: { label: 'الإرشاد الطلابي والسرية', icon: <ShieldAlert className="w-4 h-4 text-indigo-400" /> },
     'kharj-schools': { label: 'دليل مدارس ومراكز الخرج ودعوات الارتباط', icon: <MapPin className="w-4 h-4 text-emerald-400" /> },
     'platform-admin': { label: 'لوحة مدير المنصة (Platform Admin)', icon: <Crown className="w-4 h-4 text-amber-400" /> },
-    super_admin: { label: 'لوحة مدير المنصة (Platform Admin)', icon: <Crown className="w-4 h-4 text-amber-400" /> }
+    super_admin: { label: 'لوحة مدير المنصة (Platform Admin)', icon: <Crown className="w-4 h-4 text-amber-400" /> },
+    profile: { label: 'الملف الشخصي والحساب', icon: <User className="w-4 h-4 text-cyan-400" /> }
   };
 
   const currentTabInfo = tabLabels[activeTab] || { label: 'الرئيسية', icon: <GraduationCap className="w-4 h-4 text-cyan-400" /> };
@@ -165,9 +167,17 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                     <p className="text-[10px] text-blue-300/70 truncate dir-ltr text-right">{currentUser.email || currentUser.username}</p>
                   </div>
                   <button
+                    id="topheader-dropdown-profile-btn"
+                    onClick={() => setActiveTab('profile')}
+                    className="w-full text-right px-3 py-2 text-xs flex items-center gap-2 hover:bg-blue-950/60 text-cyan-300 font-bold transition mt-1"
+                  >
+                    <User className="w-4 h-4 text-cyan-400" />
+                    <span>الملف الشخصي والحساب</span>
+                  </button>
+                  <button
                     id="topheader-dropdown-logout-btn"
                     onClick={onLogout}
-                    className="w-full text-right px-3 py-2 text-xs flex items-center gap-2 hover:bg-rose-950/40 text-rose-400 font-bold transition mt-1"
+                    className="w-full text-right px-3 py-2 text-xs flex items-center gap-2 hover:bg-rose-950/40 text-rose-400 font-bold transition"
                   >
                     <LogOut className="w-4 h-4 text-rose-400" />
                     <span>تسجيل الخروج</span>

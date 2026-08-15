@@ -11,7 +11,8 @@ import {
   SchoolConversation,
   DirectMessage,
   AuthUser,
-  School as SchoolType
+  School as SchoolType,
+  UserProfile
 } from '../types';
 import { AddHomeworkModal } from './AddHomeworkModal';
 import {
@@ -24,6 +25,10 @@ import {
   fetchDirectMessages,
   sendDirectMessage,
   fetchSchoolStudyRooms,
+  createStudyRoom,
+  fetchStudyRoomMembers,
+  inviteUserToStudyRoom,
+  removeUserFromStudyRoom,
   fetchStudyRoomMessages,
   sendStudyRoomMessage,
   deleteStudyRoomMessage,
@@ -40,7 +45,7 @@ import {
   InvitationLookupResult,
   MESSAGING_ACCESS_DENIED_MESSAGE
 } from '../lib/messagingService';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, fetchSchoolProfiles } from '../lib/supabase';
 import {
   MessageSquare,
   Users,

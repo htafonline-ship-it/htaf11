@@ -53,31 +53,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     setErrorMessage('');
 
     try {
-      if (isSupabaseConfigured) {
-        // Real Google OAuth redirect via Supabase
-        await signInWithGoogle();
-      } else {
-        // Demo/Simulated Google Auth fallback if Supabase keys not set yet
-        const cleanEmail = googleEmail.trim() || 'user@google.com';
-        const cleanName = googleName.trim() || cleanEmail.split('@')[0];
-
-        const googleUser: AuthUser = {
-          id: `usr-google-${Date.now()}`,
-          username: cleanEmail.split('@')[0],
-          fullName: cleanName,
-          email: cleanEmail,
-          role: 'student',
-          avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-          loginMethod: 'google',
-          badge: 'حساب Google موثق بـ Supabase'
-        };
-
-        onLoginSuccess(googleUser);
-        onClose();
+      if (!isSupabaseConfigured) {
+        throw new Error('يرجى التحقق من مفاتيح وإعدادات Supabase في إعدادات المنصة.');
       }
+      // Real Google OAuth redirect via Supabase
+      await signInWithGoogle();
     } catch (err: any) {
       console.error('Google Auth error:', err);
-      setErrorMessage(err.message || 'فشل تسجيل الدخول بحساب Google.');
+      setErrorMessage(err.message || 'فشل تسجيل الدخول بحساب Google. تأكد من إعدادات Supabase.');
     } finally {
       setIsLoading(false);
     }
@@ -102,29 +85,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       const cleanUser = username.trim();
       const cleanPass = password.trim();
 
-      // Check for Super Admin Credentials: Username '1007363904' or 'admin' or 'htaf.online@gmail.com'
-      const isPlatformAdminMatch = 
-        (cleanUser === '1007363904' && (cleanPass === '139213' || cleanPass.length >= 3)) ||
-        (cleanUser.toLowerCase() === 'admin' && (cleanPass === '139213' || cleanPass === 'admin' || cleanPass === 'admin123')) ||
-        (cleanUser.toLowerCase() === 'htaf.online@gmail.com') ||
-        (cleanUser.toLowerCase() === 'admin.1007363904@hataf.edu.sa');
-
-      if (isPlatformAdminMatch) {
-        const adminUser: AuthUser = {
-          id: 'usr-admin-1007363904',
-          username: '1007363904',
-          fullName: 'مدير النظام (الأدمن)',
-          email: 'htaf.online@gmail.com',
-          role: 'platform_admin',
-          avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-          loginMethod: 'credentials',
-          badge: 'مدير المنصة الرئيسي (Super Admin)'
-        };
-        onLoginSuccess(adminUser);
-        onClose();
-        return;
-      }
-
       // Supabase & Real Profile Auth
       const { authUser } = await signInWithUsernameOrEmail(cleanUser, cleanPass);
       if (authUser) {
@@ -133,22 +93,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         return;
       }
 
-      // Local fallback for quick user access if needed
-      const isDemo = cleanUser.startsWith('student.') || cleanUser.startsWith('teacher.') || cleanUser.startsWith('parent.') || cleanUser.startsWith('counselor.');
-      const newUser: AuthUser = {
-        id: `usr-${Date.now()}`,
-        username: cleanUser,
-        fullName: `مستخدم (${cleanUser})`,
-        email: cleanUser.includes('@') ? cleanUser : `${cleanUser}@htaf.online`,
-        role: selectedRole,
-        avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
-        loginMethod: 'credentials',
-        isDemoAccount: isDemo,
-        badge: isDemo ? 'حساب تجريبي نشط' : 'حساب موثق'
-      };
-
-      onLoginSuccess(newUser);
-      onClose();
+      throw new Error('تعذر التحقق من بيانات الدخول.');
     } catch (err: any) {
       console.error('Login error:', err);
       setErrorMessage(err.message || 'خطأ في اسم المستخدم أو كلمة المرور.');
@@ -157,7 +102,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     }
   };
 
-  // Quick select helper for testing demo accounts
+  // Quick select helper to autofill username
   const handleQuickDemoSelect = (demoUsername: string, defaultPass = 'DemoPass2026!') => {
     setUsername(demoUsername);
     setPassword(defaultPass);

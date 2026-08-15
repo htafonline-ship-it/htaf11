@@ -20,7 +20,8 @@ import {
   ChevronLeft,
   ScanLine,
   FileCheck2,
-  MapPin
+  MapPin,
+  User
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -403,7 +404,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="p-3 border-t border-blue-900/40 bg-[#060c1d] relative z-10">
         {currentUser ? (
           <div className="space-y-2">
-            <div className="flex items-center gap-2.5 p-2 bg-[#09132c] rounded-xl border border-blue-900/50 shadow-xs">
+            <div
+              onClick={() => handleTabClick('profile')}
+              className="flex items-center gap-2.5 p-2 bg-[#09132c] hover:bg-[#0d1a3c] rounded-xl border border-blue-900/50 shadow-xs cursor-pointer transition group"
+              title="عرض وتعديل الملف الشخصي"
+            >
               <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-cyan-500 via-blue-600 to-purple-600 flex items-center justify-center font-bold text-white text-xs overflow-hidden shrink-0 shadow-xs">
                 {currentUser.avatarUrl ? (
                   <img src={currentUser.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
@@ -412,13 +417,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 )}
               </div>
               <div className="truncate flex-1">
-                <p className="text-xs font-black text-slate-100 truncate">{currentUser.fullName}</p>
+                <p className="text-xs font-black text-slate-100 group-hover:text-cyan-300 transition-colors truncate">{currentUser.fullName}</p>
                 <div className="flex items-center gap-1 mt-0.5">
                   <span className="bg-blue-950 text-cyan-300 border border-blue-800/50 text-[9px] font-bold px-1.5 py-0.2 rounded">
                     {roleDisplayNames[currentUser.role] || currentUser.role}
                   </span>
                 </div>
               </div>
+              <User className="w-3.5 h-3.5 text-slate-400 group-hover:text-cyan-300 transition-colors" />
             </div>
 
             <button

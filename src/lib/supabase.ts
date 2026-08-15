@@ -15,7 +15,9 @@ import {
   AttendanceStatus,
   SchoolInvitation,
   SchoolInvitationStatus,
-  PlatformLetterSettings
+  PlatformLetterSettings,
+  UserProfile,
+  UserRole
 } from '../types';
 
 // Retrieve Supabase credentials from Environment or LocalStorage fallback settings
@@ -212,6 +214,35 @@ export async function upsertUserProfile(profile: {
   }
 }
 
+export async function updateUserProfile(
+  userId: string,
+  updates: Partial<DbProfile>
+): Promise<DbProfile | null> {
+  if (!isSupabaseConfigured || !userId) return null;
+  try {
+    const payload = {
+      ...updates,
+      updated_at: new Date().toISOString()
+    };
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .update(payload)
+      .eq('id', userId)
+      .select()
+      .single();
+
+    if (error) {
+      console.warn('Error updating profile in Supabase:', error.message);
+      return null;
+    }
+    return data;
+  } catch (err) {
+    console.warn('Exception updating profile:', err);
+    return null;
+  }
+}
+
 /**
  * Sign in using Username or Email with safe resolution against Supabase Auth.
  * Supports domains like @htaf.online and user-defined username aliases.
@@ -224,112 +255,94 @@ export async function signInWithUsernameOrEmail(
   if (!clean) throw new Error('يرجى إدخال اسم المستخدم أو البريد الإلكتروني.');
   if (!pass) throw new Error('يرجى إدخال كلمة المرور.');
 
-  let targetEmail = clean.toLowerCase();
-
-  if (isSupabaseConfigured) {
-    // 1. If user entered username without @, look up in profiles table first
-    if (!clean.includes('@')) {
-      const profile = await fetchUserProfileByUsername(clean);
-      if (profile && profile.email) {
-        targetEmail = profile.email;
-      } else {
-        // Fallback standard domain alias: username@htaf.online
-        targetEmail = `${clean.toLowerCase()}@htaf.online`;
-      }
-    }
-
-    // 2. Perform Supabase Auth Sign In
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: targetEmail,
-      password: pass,
-    });
-
-    if (error) {
-      // If user does not exist in Auth but exists in demo preset or is demo login, throw clear message
-      throw new Error(error.message || 'بيانات الدخول غير صحيحة.');
-    }
-
-    const authUser = data.user;
-    if (!authUser) throw new Error('تعذر إتمام عملية تسجيل الدخول.');
-
-    // 3. Fetch linked profile
-    let profile = await fetchUserProfile(authUser.id);
-
-    if (!profile) {
-      // Auto-create profile if missing
-      const derivedUsername = authUser.user_metadata?.username || targetEmail.split('@')[0] || `user_${authUser.id.slice(0, 6)}`;
-      const fullName = authUser.user_metadata?.full_name || derivedUsername;
-      const role = authUser.user_metadata?.role || (targetEmail.includes('admin') ? 'platform_admin' : 'student');
-      const isDemo = Boolean(authUser.user_metadata?.is_demo_account);
-
-      profile = await upsertUserProfile({
-        id: authUser.id,
-        full_name: fullName,
-        username: derivedUsername,
-        email: targetEmail,
-        role,
-        is_demo_account: isDemo,
-        account_status: 'active'
-      });
-    }
-
-    // 4. Verify Account Status
-    if (profile?.account_status === 'suspended') {
-      await signOutSupabase();
-      throw new Error('تم تعطيل هذا الحساب من قبل إدارة المنصة. يرجى التواصل مع الدعم الفني.');
-    }
-
-    // 5. Verify Demo Expiration
-    if (profile?.is_demo_account && profile.demo_expires_at) {
-      const expiry = new Date(profile.demo_expires_at);
-      if (expiry.getTime() < Date.now()) {
-        await signOutSupabase();
-        throw new Error('انتهت فترة صلاحية هذا الحساب التجريبي. يرجى التواصل مع إدارة المنصة لتمديد الصلاحية.');
-      }
-    }
-
-    // 6. Update last login
-    if (profile?.id) {
-      supabase.from('profiles').update({ last_login_at: new Date().toISOString() }).eq('id', profile.id).then();
-    }
-
-    return {
-      authUser: {
-        id: authUser.id,
-        username: profile?.username || targetEmail.split('@')[0],
-        fullName: profile?.full_name || authUser.user_metadata?.full_name || targetEmail.split('@')[0],
-        email: targetEmail,
-        role: (profile?.role || authUser.user_metadata?.role || 'student'),
-        schoolId: profile?.school_id || 'al-namouthajya',
-        classId: profile?.class_id,
-        gradeId: profile?.grade_id,
-        accountStatus: profile?.account_status || 'active',
-        isDemoAccount: profile?.is_demo_account || false,
-        demoExpiresAt: profile?.demo_expires_at,
-        loginMethod: 'credentials',
-        badge: profile?.is_demo_account ? 'حساب تجريبي معتمد' : 'حساب موثق بـ Supabase'
-      },
-      rawUser: authUser
-    };
+  if (!isSupabaseConfigured) {
+    throw new Error('لم يتم تكوين الاتصال بقاعدة بيانات Supabase Auth.');
   }
 
-  // Offline / Demo fallback when Supabase is not yet configured
-  const demoRole = clean.includes('teacher') ? 'teacher' : clean.includes('parent') ? 'parent' : clean.includes('counselor') ? 'counselor' : clean.includes('admin') ? 'platform_admin' : 'student';
-  const isDemo = clean.includes('demo') || clean.startsWith('student.') || clean.startsWith('teacher.');
+  let targetEmail = clean.toLowerCase();
+
+  // 1. If user entered username without @, look up in profiles table first
+  if (!clean.includes('@')) {
+    const profile = await fetchUserProfileByUsername(clean);
+    if (profile && profile.email) {
+      targetEmail = profile.email;
+    } else {
+      // Standard domain alias: username@htaf.online
+      targetEmail = `${clean.toLowerCase()}@htaf.online`;
+    }
+  }
+
+  // 2. Perform Supabase Auth Sign In
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: targetEmail,
+    password: pass,
+  });
+
+  if (error) {
+    throw new Error(error.message || 'بيانات الدخول غير صحيحة. يرجى التحقق من البريد الإلكتروني وكلمة المرور.');
+  }
+
+  const authUser = data.user;
+  if (!authUser) throw new Error('تعذر إتمام عملية تسجيل الدخول.');
+
+  // 3. Fetch linked profile
+  let profile = await fetchUserProfile(authUser.id);
+
+  if (!profile) {
+    // Auto-create profile if missing
+    const derivedUsername = authUser.user_metadata?.username || targetEmail.split('@')[0] || `user_${authUser.id.slice(0, 6)}`;
+    const fullName = authUser.user_metadata?.full_name || derivedUsername;
+    const role = authUser.user_metadata?.role || 'student';
+    const isDemo = Boolean(authUser.user_metadata?.is_demo_account);
+
+    profile = await upsertUserProfile({
+      id: authUser.id,
+      full_name: fullName,
+      username: derivedUsername,
+      email: targetEmail,
+      role,
+      is_demo_account: isDemo,
+      account_status: 'active'
+    });
+  }
+
+  // 4. Verify Account Status
+  if (profile?.account_status === 'suspended') {
+    await signOutSupabase();
+    throw new Error('تم تعطيل هذا الحساب من قبل إدارة المنصة. يرجى التواصل مع الدعم الفني.');
+  }
+
+  // 5. Verify Demo Expiration if applicable
+  if (profile?.is_demo_account && profile.demo_expires_at) {
+    const expiry = new Date(profile.demo_expires_at);
+    if (expiry.getTime() < Date.now()) {
+      await signOutSupabase();
+      throw new Error('انتهت فترة صلاحية هذا الحساب التجريبي. يرجى التواصل مع إدارة المنصة لتمديد الصلاحية.');
+    }
+  }
+
+  // 6. Update last login timestamp in Supabase
+  if (profile?.id) {
+    supabase.from('profiles').update({ last_login_at: new Date().toISOString() }).eq('id', profile.id).then();
+  }
+
   return {
     authUser: {
-      id: `usr-demo-${clean}`,
-      username: clean,
-      fullName: `مستخدم (${clean})`,
-      email: clean.includes('@') ? clean : `${clean}@htaf.online`,
-      role: demoRole,
-      schoolId: 'al-namouthajya',
-      accountStatus: 'active',
-      isDemoAccount: isDemo,
+      id: authUser.id,
+      username: profile?.username || targetEmail.split('@')[0],
+      fullName: profile?.full_name || authUser.user_metadata?.full_name || targetEmail.split('@')[0],
+      email: targetEmail,
+      role: (profile?.role || authUser.user_metadata?.role || 'student'),
+      schoolId: profile?.school_id,
+      classId: profile?.class_id,
+      gradeId: profile?.grade_id,
+      accountStatus: profile?.account_status || 'active',
+      isDemoAccount: profile?.is_demo_account || false,
+      demoExpiresAt: profile?.demo_expires_at,
       loginMethod: 'credentials',
-      badge: isDemo ? 'حساب تجريبي نشط' : 'حساب معتمد'
+      badge: 'حساب موثق بـ Supabase'
     },
-    rawUser: null
+    rawUser: authUser
   };
 }
 
@@ -615,6 +628,102 @@ export async function fetchSchoolUsersForInvite(schoolId: string): Promise<Array
     return [];
   } catch (err) {
     console.warn('Error fetching school users for invite:', err);
+    return [];
+  }
+}
+
+export async function fetchSchoolProfiles(schoolId: string): Promise<UserProfile[]> {
+  if (!isSupabaseConfigured || !schoolId) {
+    // Return sample profiles for UI testing
+    return [
+      {
+        id: 'usr-demo-student',
+        fullName: 'طالب تجريبي (الصف الثالث المتوسط)',
+        username: 'student.demo1',
+        email: 'student.demo1@htaf.online',
+        role: 'student',
+        schoolId,
+        classId: 'class-3-1',
+        gradeId: 'grade-3-m',
+        accountStatus: 'active',
+        isDemoAccount: true,
+        demoExpiresAt: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+        createdAt: new Date().toISOString(),
+        lastLoginAt: new Date().toISOString()
+      },
+      {
+        id: 'usr-demo-teacher',
+        fullName: 'أ. عبد العزيز الشمري (معلم العلوم)',
+        username: 'teacher.demo1',
+        email: 'teacher.demo1@htaf.online',
+        role: 'teacher',
+        schoolId,
+        accountStatus: 'active',
+        isDemoAccount: true,
+        demoExpiresAt: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+        createdAt: new Date().toISOString(),
+        lastLoginAt: new Date().toISOString()
+      },
+      {
+        id: 'usr-demo-parent',
+        fullName: 'أبو فهد (ولي أمر تجريبي)',
+        username: 'parent.demo1',
+        email: 'parent.demo1@htaf.online',
+        role: 'parent',
+        schoolId,
+        accountStatus: 'active',
+        isDemoAccount: true,
+        demoExpiresAt: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+        createdAt: new Date().toISOString(),
+        lastLoginAt: new Date().toISOString()
+      },
+      {
+        id: 'usr-demo-counselor',
+        fullName: 'أ. خالد التميمي (الموجه الطلابي)',
+        username: 'counselor.demo1',
+        email: 'counselor.demo1@htaf.online',
+        role: 'counselor',
+        schoolId,
+        accountStatus: 'active',
+        isDemoAccount: true,
+        demoExpiresAt: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+        createdAt: new Date().toISOString(),
+        lastLoginAt: new Date().toISOString()
+      }
+    ];
+  }
+
+  try {
+    const { data: profiles, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('school_id', schoolId)
+      .order('created_at', { ascending: false });
+
+    if (error || !profiles) {
+      console.warn('Error fetching school profiles:', error?.message);
+      return [];
+    }
+
+    return profiles.map(p => ({
+      id: p.id,
+      fullName: p.full_name,
+      username: p.username,
+      email: p.email,
+      role: p.role as UserRole,
+      schoolId: p.school_id,
+      classId: p.class_id,
+      gradeId: p.grade_id,
+      accountStatus: p.account_status || 'active',
+      isDemoAccount: p.is_demo_account ?? false,
+      demoExpiresAt: p.demo_expires_at,
+      avatarUrl: p.avatar_url,
+      lastLoginAt: p.last_login_at,
+      createdAt: p.created_at,
+      updatedAt: p.updated_at
+    }));
+  } catch (err) {
+    console.warn('Exception fetching school profiles:', err);
     return [];
   }
 }
