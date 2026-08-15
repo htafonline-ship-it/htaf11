@@ -2063,6 +2063,8 @@ export async function saveTeacherPermissions(
 // 23. SQL MIGRATION SCRIPT GENERATOR
 // -------------------------------------------------------------
 
+export { getMessagingSqlMigration } from './messagingService';
+
 export function getTeacherOperationsSqlMigration(): string {
   return `-- =========================================================================
 -- منصة حقائق العلوم - ترقية وتوسعة حساب المعلم التشغيلي (Supabase SQL Migration)

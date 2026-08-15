@@ -803,6 +803,9 @@ export default function App() {
             {activeTab === 'messaging' && (
               <MessagingView
                 currentRole={currentRole}
+                currentUser={currentUser}
+                currentSchool={currentSchool}
+                studentProfile={studentProfile}
                 tickets={tickets}
                 studyGroups={studyGroups}
                 groupMessages={groupMessages}
@@ -811,6 +814,7 @@ export default function App() {
                 onAddTicketReply={handleAddTicketReply}
                 onSendGroupMessage={handleSendGroupMessage}
                 onDeleteGroupMessage={handleDeleteGroupMessage}
+                onAddAuditLog={(log) => setAuditLogs((prev) => [log, ...prev])}
               />
             )}
 

@@ -1,4 +1,4 @@
-export type UserRole = 'student' | 'teacher' | 'parent' | 'counselor' | 'vice_principal' | 'principal' | 'school_admin' | 'school_manager' | 'super_admin' | 'platform_admin';
+export type UserRole = 'student' | 'teacher' | 'parent' | 'counselor' | 'vice_principal' | 'principal' | 'school_admin' | 'school_manager' | 'super_admin' | 'platform_admin' | 'admin';
 
 export interface AuthUser {
   id: string;
@@ -60,6 +60,8 @@ export interface SchoolTenant {
   totalTeachersCount?: number;
   circulars: SchoolCircular[];
 }
+
+export type School = SchoolTenant;
 
 export type SchoolInvitationStatus = 'draft' | 'sent' | 'viewed' | 'registered' | 'verified' | 'activated';
 
@@ -315,15 +317,22 @@ export interface CurriculumSyncStatus {
 
 export interface TicketMessage {
   id: string;
+  ticketId?: string;
+  senderId?: string;
   senderRole: UserRole;
   senderName: string;
+  senderAvatar?: string;
   text: string;
   timestamp: string;
   attachmentName?: string;
+  attachmentUrl?: string;
 }
 
 export interface SupportTicket {
   id: string;
+  schoolId?: string;
+  ticketNumber?: string;
+  userId?: string;
   studentName: string;
   grade: string;
   category: 'استفسار أكاديمي' | 'طلب مستندات رسمية' | 'إرشاد نفسي وتربوي' | 'شكوى/اقتراح' | 'الدعم الفني والمنصة';
@@ -332,12 +341,68 @@ export interface SupportTicket {
   createdAt: string;
   lastUpdated: string;
   priority: 'عاجل' | 'متوسط' | 'عادي';
+  assignedTo?: string;
   messages: TicketMessage[];
+}
+
+export type ConversationType = 'direct' | 'group' | 'administrative' | 'counseling' | 'parent_teacher';
+
+export interface ConversationMember {
+  id: string;
+  conversationId: string;
+  userId: string;
+  userName: string;
+  userRole: UserRole;
+  userAvatar?: string;
+  joinedAt: string;
+  lastReadAt?: string;
+}
+
+export interface DirectMessage {
+  id: string;
+  conversationId: string;
+  schoolId?: string;
+  senderId: string;
+  senderName: string;
+  senderRole: UserRole;
+  senderAvatar?: string;
+  text: string;
+  timestamp: string;
+  attachmentUrl?: string;
+  attachmentName?: string;
+  problemCitation?: {
+    question: string;
+    finalAnswer: string;
+    bookName: string;
+    page: number;
+  };
+  homeworkCitation?: HomeworkCitation;
+  isDeleted?: boolean;
+  deletedBy?: string;
+  isFlagged?: boolean;
+}
+
+export interface SchoolConversation {
+  id: string;
+  schoolId: string;
+  conversationType: ConversationType;
+  title: string;
+  createdBy: string;
+  createdByName?: string;
+  createdByRole?: UserRole;
+  createdAt: string;
+  updatedAt: string;
+  lastMessage?: string;
+  lastMessageTime?: string;
+  unreadCount?: number;
+  members: ConversationMember[];
 }
 
 export interface StudyGroupMessage {
   id: string;
   groupId: string;
+  schoolId?: string;
+  senderId?: string;
   senderName: string;
   senderAvatar: string;
   senderRole: UserRole;
@@ -354,6 +419,7 @@ export interface StudyGroupMessage {
   };
   homeworkCitation?: HomeworkCitation;
   attachmentUrl?: string;
+  attachmentName?: string;
 }
 
 export interface StudyGroup {
