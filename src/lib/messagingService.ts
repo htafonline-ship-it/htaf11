@@ -815,6 +815,37 @@ export async function sendDirectMessage(payload: {
   }
 }
 
+export async function markConversationAsRead(
+  conversationId: string,
+  userId: string,
+  schoolId?: string
+): Promise<boolean> {
+  if (!isSupabaseConfigured || !conversationId || !userId) return false;
+
+  try {
+    const now = new Date().toISOString();
+    let query = supabase
+      .from('conversation_members')
+      .update({ last_read_at: now })
+      .eq('conversation_id', conversationId)
+      .eq('user_id', userId);
+
+    if (schoolId) {
+      query = query.eq('school_id', schoolId);
+    }
+
+    const { error } = await query;
+    if (error) {
+      console.warn('Error marking conversation as read in Supabase:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('Error in markConversationAsRead:', err);
+    return false;
+  }
+}
+
 // =========================================================================
 // 4. PEER STUDY ROOMS SERVICES
 // =========================================================================

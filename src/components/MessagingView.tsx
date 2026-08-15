@@ -30,7 +30,8 @@ import {
   fetchModerationAuditLogs,
   createModerationAuditLog,
   uploadMessageAttachment,
-  getMessagingSqlMigration
+  getMessagingSqlMigration,
+  markConversationAsRead
 } from '../lib/messagingService';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import {
@@ -59,7 +60,11 @@ import {
   Building,
   Upload,
   RefreshCw,
-  Eye
+  Eye,
+  Bell,
+  Radio,
+  CheckCheck,
+  X
 } from 'lucide-react';
 
 interface MessagingViewProps {
@@ -184,11 +189,84 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
   const [isCreatingConv, setIsCreatingConv] = useState(false);
 
   // -------------------------------------------------------------
-  // 4. SQL MIGRATION & SYSTEM MODALS
+  // 4. SQL MIGRATION & SYSTEM MODALS & REALTIME NOTIFICATIONS
   // -------------------------------------------------------------
   const [showSqlModal, setShowSqlModal] = useState(false);
   const [copiedSql, setCopiedSql] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(false);
+
+  // Incoming realtime toast notification
+  const [incomingToast, setIncomingToast] = useState<{
+    id: string;
+    senderName: string;
+    senderRole?: string;
+    text: string;
+    channelTitle: string;
+    type: 'direct' | 'ticket' | 'room';
+    targetId: string;
+  } | null>(null);
+
+  // Idempotency tracking to prevent duplicate notifications & alerts
+  const notifiedMessageIdsRef = useRef<Set<string>>(new Set());
+
+  // Mutable refs to prevent stale closure in Realtime event handlers
+  const selectedConversationRef = useRef<SchoolConversation | null>(selectedConversation);
+  const selectedTicketRef = useRef<SupportTicket | null>(selectedTicket);
+  const selectedGroupRef = useRef<StudyGroup | null>(selectedGroup);
+  const activeTabRef = useRef<'tickets' | 'groups' | 'direct'>(activeTab);
+  const effectiveUserIdRef = useRef<string>(effectiveUserId);
+
+  useEffect(() => {
+    selectedConversationRef.current = selectedConversation;
+  }, [selectedConversation]);
+
+  useEffect(() => {
+    selectedTicketRef.current = selectedTicket;
+  }, [selectedTicket]);
+
+  useEffect(() => {
+    selectedGroupRef.current = selectedGroup;
+  }, [selectedGroup]);
+
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
+  useEffect(() => {
+    effectiveUserIdRef.current = effectiveUserId;
+  }, [effectiveUserId]);
+
+  // Gentle audio chime for incoming messages
+  const playNotificationSound = () => {
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) return;
+      const ctx = new AudioContextClass();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.1); // A5
+      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.35);
+    } catch {
+      // Audio playback permission / safe fallback
+    }
+  };
+
+  // Auto-dismiss incoming toast after 5.5 seconds
+  useEffect(() => {
+    if (incomingToast) {
+      const timer = setTimeout(() => {
+        setIncomingToast(null);
+      }, 5500);
+      return () => clearTimeout(timer);
+    }
+  }, [incomingToast]);
 
   const ticketFileInputRef = useRef<HTMLInputElement>(null);
   const replyFileInputRef = useRef<HTMLInputElement>(null);
@@ -208,6 +286,7 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
         if (!selectedTicket || !dbTickets.some(t => t.id === selectedTicket.id)) {
           setSelectedTicket(dbTickets[0]);
         }
+        dbTickets.forEach(t => t.messages.forEach(m => notifiedMessageIdsRef.current.add(m.id)));
       } else if (propTickets.length > 0) {
         setTicketsList(propTickets);
         if (!selectedTicket) setSelectedTicket(propTickets[0]);
@@ -226,6 +305,7 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
         setConversations(dbConvs);
         if (!selectedConversation || !dbConvs.some(c => c.id === selectedConversation.id)) {
           setSelectedConversation(dbConvs[0]);
+          markConversationAsRead(dbConvs[0].id, effectiveUserId, activeSchoolId);
         }
       } else {
         // Fallback default conversation if empty
@@ -249,7 +329,8 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
                 userId: effectiveUserId,
                 userName: effectiveUserName,
                 userRole: currentRole,
-                joinedAt: new Date().toISOString()
+                joinedAt: new Date().toISOString(),
+                lastReadAt: new Date().toISOString()
               },
               {
                 id: 'cm-2',
@@ -280,7 +361,8 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
                 userId: effectiveUserId,
                 userName: effectiveUserName,
                 userRole: currentRole,
-                joinedAt: new Date().toISOString()
+                joinedAt: new Date().toISOString(),
+                lastReadAt: new Date().toISOString()
               }
             ]
           }
@@ -299,12 +381,44 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
     loadAllData();
   }, [activeSchoolId, effectiveUserId, currentRole]);
 
-  // Load direct messages when selected conversation changes
+  // Select a conversation and update last_read_at in database & state
+  const handleSelectConversation = (conv: SchoolConversation) => {
+    setSelectedConversation(conv);
+    markConversationAsRead(conv.id, effectiveUserId, activeSchoolId);
+    setConversations(prev => prev.map(c => {
+      if (c.id === conv.id) {
+        const nowIso = new Date().toISOString();
+        return {
+          ...c,
+          members: (c.members || []).map(m => m.userId === effectiveUserId ? { ...m, lastReadAt: nowIso } : m)
+        };
+      }
+      return c;
+    }));
+  };
+
+  // Helper to check if a conversation has unread messages for current user
+  const isConvUnread = (conv: SchoolConversation) => {
+    if (selectedConversation?.id === conv.id && activeTab === 'direct') return false;
+    const myMember = conv.members?.find(m => m.userId === effectiveUserId);
+    if (!myMember) {
+      return !!conv.lastMessage && conv.createdBy !== effectiveUserId;
+    }
+    if (!myMember.lastReadAt) {
+      return !!conv.lastMessage && conv.createdBy !== effectiveUserId;
+    }
+    const myReadTime = new Date(myMember.lastReadAt).getTime();
+    const convUpdatedTime = conv.updatedAt ? new Date(conv.updatedAt).getTime() : 0;
+    return convUpdatedTime > (myReadTime + 1000);
+  };
+
+  // Load direct messages when selected conversation changes & mark as read
   useEffect(() => {
     if (selectedConversation) {
       fetchDirectMessages(selectedConversation.id).then(msgs => {
         if (msgs && msgs.length > 0) {
           setDirectMessages(msgs);
+          msgs.forEach(m => notifiedMessageIdsRef.current.add(m.id));
         } else {
           // Default initial greeting if newly created
           setDirectMessages([
@@ -320,8 +434,21 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
           ]);
         }
       });
+
+      // Update last_read_at in Supabase when opening conversation
+      markConversationAsRead(selectedConversation.id, effectiveUserId, activeSchoolId);
+      setConversations(prev => prev.map(c => {
+        if (c.id === selectedConversation.id) {
+          const nowIso = new Date().toISOString();
+          return {
+            ...c,
+            members: (c.members || []).map(m => m.userId === effectiveUserId ? { ...m, lastReadAt: nowIso } : m)
+          };
+        }
+        return c;
+      }));
     }
-  }, [selectedConversation?.id]);
+  }, [selectedConversation?.id, effectiveUserId, activeSchoolId]);
 
   // Load study room messages when selected room changes
   useEffect(() => {
@@ -329,6 +456,7 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
       fetchStudyRoomMessages(selectedGroup.id).then(msgs => {
         if (msgs && msgs.length > 0) {
           setStudyRoomMessages(msgs);
+          msgs.forEach(m => notifiedMessageIdsRef.current.add(m.id));
         } else {
           const matchedPropMsgs = propGroupMessages.filter(m => m.groupId === selectedGroup.id);
           if (matchedPropMsgs.length > 0) {
@@ -339,40 +467,98 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
     }
   }, [selectedGroup?.id, propGroupMessages]);
 
-  // Supabase Realtime Channels setup
+  // Supabase Realtime Channels setup for real-time synchronization with deduplication
   useEffect(() => {
     if (!isSupabaseConfigured) return;
 
     const channel = supabase
       .channel(`school_messaging_${activeSchoolId}`)
+      // 1. Listen to Conversations updates & new channels
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'conversations', filter: `school_id=eq.${activeSchoolId}` },
+        (payload) => {
+          const updatedConv = payload.new as any;
+          if (!updatedConv || !updatedConv.id) return;
+
+          if (payload.eventType === 'INSERT') {
+            setConversations(prev => {
+              if (prev.some(c => c.id === updatedConv.id)) return prev;
+              return [
+                {
+                  id: updatedConv.id,
+                  schoolId: updatedConv.school_id,
+                  conversationType: updatedConv.conversation_type,
+                  title: updatedConv.title,
+                  createdBy: updatedConv.created_by,
+                  createdByName: updatedConv.created_by_name,
+                  createdByRole: updatedConv.created_by_role,
+                  createdAt: updatedConv.created_at,
+                  updatedAt: updatedConv.updated_at,
+                  lastMessage: updatedConv.last_message,
+                  lastMessageTime: 'الآن',
+                  members: []
+                },
+                ...prev
+              ];
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            setConversations(prev => prev.map(c => {
+              if (c.id === updatedConv.id) {
+                return {
+                  ...c,
+                  title: updatedConv.title || c.title,
+                  lastMessage: updatedConv.last_message || c.lastMessage,
+                  lastMessageTime: 'الآن',
+                  updatedAt: updatedConv.updated_at || new Date().toISOString()
+                };
+              }
+              return c;
+            }));
+          }
+        }
+      )
+      // 2. Listen to Support Tickets updates
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'support_tickets', filter: `school_id=eq.${activeSchoolId}` },
         () => {
-          fetchSchoolTickets(activeSchoolId, effectiveUserId, currentRole).then(data => {
+          fetchSchoolTickets(activeSchoolId, effectiveUserIdRef.current, currentRole).then(data => {
             if (data.length > 0) setTicketsList(data);
           });
         }
       )
+      // 3. Listen to Ticket Messages (Real-time reply feed with deduplication)
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'ticket_messages', filter: `school_id=eq.${activeSchoolId}` },
         (payload) => {
           const newMsg = payload.new as any;
-          if (newMsg && selectedTicket && newMsg.ticket_id === selectedTicket.id) {
+          if (!newMsg || !newMsg.id) return;
+
+          // Deduplication: prevent duplicate processing
+          if (notifiedMessageIdsRef.current.has(newMsg.id)) return;
+          notifiedMessageIdsRef.current.add(newMsg.id);
+
+          const isCurrentTicket = selectedTicketRef.current?.id === newMsg.ticket_id;
+          const currentUserId = effectiveUserIdRef.current;
+
+          if (isCurrentTicket) {
             setSelectedTicket(prev => {
               if (!prev) return prev;
-              const exists = prev.messages.some(m => m.id === newMsg.id);
-              if (exists) return prev;
+              if (prev.messages.some(m => m.id === newMsg.id)) return prev;
               return {
                 ...prev,
+                lastUpdated: 'الآن',
                 messages: [
                   ...prev.messages,
                   {
                     id: newMsg.id,
                     ticketId: newMsg.ticket_id,
+                    senderId: newMsg.sender_id,
                     senderRole: newMsg.sender_role,
                     senderName: newMsg.sender_name,
+                    senderAvatar: newMsg.sender_avatar,
                     text: newMsg.text,
                     timestamp: 'الآن',
                     attachmentName: newMsg.attachment_name,
@@ -382,14 +568,66 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
               };
             });
           }
+
+          // Update tickets list
+          setTicketsList(prev => prev.map(t => {
+            if (t.id === newMsg.ticket_id) {
+              const alreadyHas = t.messages.some(m => m.id === newMsg.id);
+              return {
+                ...t,
+                lastUpdated: 'الآن',
+                messages: alreadyHas ? t.messages : [
+                  ...t.messages,
+                  {
+                    id: newMsg.id,
+                    ticketId: newMsg.ticket_id,
+                    senderId: newMsg.sender_id,
+                    senderRole: newMsg.sender_role,
+                    senderName: newMsg.sender_name,
+                    text: newMsg.text,
+                    timestamp: 'الآن',
+                    attachmentName: newMsg.attachment_name,
+                    attachmentUrl: newMsg.attachment_url
+                  }
+                ]
+              };
+            }
+            return t;
+          }));
+
+          // Trigger non-repeating toast if from another user and not currently active
+          if (newMsg.sender_id !== currentUserId && (!isCurrentTicket || activeTabRef.current !== 'tickets')) {
+            playNotificationSound();
+            setIncomingToast({
+              id: newMsg.id,
+              senderName: newMsg.sender_name,
+              senderRole: newMsg.sender_role,
+              text: newMsg.text,
+              channelTitle: `تذكرة استفسار #${newMsg.ticket_id}`,
+              type: 'ticket',
+              targetId: newMsg.ticket_id
+            });
+          }
         }
       )
+      // 4. Listen to Direct Messages (Real-time chat feed with last_read_at update)
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'direct_messages', filter: `school_id=eq.${activeSchoolId}` },
         (payload) => {
           const newDm = payload.new as any;
-          if (newDm && selectedConversation && newDm.conversation_id === selectedConversation.id) {
+          if (!newDm || !newDm.id) return;
+
+          // Deduplication: prevent duplicate processing
+          if (notifiedMessageIdsRef.current.has(newDm.id)) return;
+          notifiedMessageIdsRef.current.add(newDm.id);
+
+          const currentUserId = effectiveUserIdRef.current;
+          const isCurrentConv = selectedConversationRef.current?.id === newDm.conversation_id;
+          const isDirectTab = activeTabRef.current === 'direct';
+
+          // If the message is for the currently open conversation
+          if (isCurrentConv) {
             setDirectMessages(prev => {
               if (prev.some(m => m.id === newDm.id)) return prev;
               return [
@@ -400,6 +638,7 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
                   senderId: newDm.sender_id,
                   senderName: newDm.sender_name,
                   senderRole: newDm.sender_role,
+                  senderAvatar: newDm.sender_avatar,
                   text: newDm.text,
                   timestamp: 'الآن',
                   attachmentUrl: newDm.attachment_url,
@@ -409,17 +648,113 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
                 }
               ];
             });
+
+            // Automatically mark conversation as read in DB and local state
+            markConversationAsRead(newDm.conversation_id, currentUserId, activeSchoolId);
+            setConversations(prev => prev.map(c => {
+              if (c.id === newDm.conversation_id) {
+                const nowIso = new Date().toISOString();
+                return {
+                  ...c,
+                  lastMessage: newDm.text.substring(0, 80),
+                  lastMessageTime: 'الآن',
+                  updatedAt: nowIso,
+                  members: (c.members || []).map(m => m.userId === currentUserId ? { ...m, lastReadAt: nowIso } : m)
+                };
+              }
+              return c;
+            }));
+          } else {
+            // Message in a different conversation: update last message
+            setConversations(prev => prev.map(c => {
+              if (c.id === newDm.conversation_id) {
+                return {
+                  ...c,
+                  lastMessage: newDm.text.substring(0, 80),
+                  lastMessageTime: 'الآن',
+                  updatedAt: new Date().toISOString()
+                };
+              }
+              return c;
+            }));
+
+            // If not sent by current user, trigger non-repeating toast & soft chime
+            if (newDm.sender_id !== currentUserId) {
+              playNotificationSound();
+              setIncomingToast({
+                id: newDm.id,
+                senderName: newDm.sender_name,
+                senderRole: newDm.sender_role,
+                text: newDm.text,
+                channelTitle: 'محادثة مباشرة',
+                type: 'direct',
+                targetId: newDm.conversation_id
+              });
+            }
           }
         }
       )
+      // 5. Listen to Study Room Messages (Real-time study room feed & deletion sync)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'study_room_messages', filter: `school_id=eq.${activeSchoolId}` },
-        () => {
-          if (selectedGroup) {
-            fetchStudyRoomMessages(selectedGroup.id).then(msgs => {
-              if (msgs.length > 0) setStudyRoomMessages(msgs);
-            });
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newSrm = payload.new as any;
+            if (!newSrm || !newSrm.id) return;
+            if (notifiedMessageIdsRef.current.has(newSrm.id)) return;
+            notifiedMessageIdsRef.current.add(newSrm.id);
+
+            const isCurrentRoom = selectedGroupRef.current?.id === newSrm.room_id;
+            const currentUserId = effectiveUserIdRef.current;
+
+            if (isCurrentRoom) {
+              setStudyRoomMessages(prev => {
+                if (prev.some(m => m.id === newSrm.id)) return prev;
+                return [
+                  ...prev,
+                  {
+                    id: newSrm.id,
+                    groupId: newSrm.room_id,
+                    schoolId: newSrm.school_id,
+                    senderId: newSrm.sender_id,
+                    senderName: newSrm.sender_name,
+                    senderRole: newSrm.sender_role,
+                    senderAvatar: newSrm.sender_avatar || '🧑‍🎓',
+                    text: newSrm.text,
+                    timestamp: 'الآن',
+                    isDeleted: newSrm.is_deleted,
+                    deletedBy: newSrm.deleted_by,
+                    isFlagged: newSrm.is_flagged,
+                    problemCitation: newSrm.problem_citation,
+                    homeworkCitation: newSrm.homework_citation,
+                    attachmentUrl: newSrm.attachment_url,
+                    attachmentName: newSrm.attachment_name
+                  }
+                ];
+              });
+            } else if (newSrm.sender_id !== currentUserId && activeTabRef.current !== 'groups') {
+              playNotificationSound();
+              setIncomingToast({
+                id: newSrm.id,
+                senderName: newSrm.sender_name,
+                senderRole: newSrm.sender_role,
+                text: newSrm.text,
+                channelTitle: 'غرفة المذاكرة الجماعية',
+                type: 'room',
+                targetId: newSrm.room_id
+              });
+            }
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedSrm = payload.new as any;
+            if (updatedSrm && updatedSrm.is_deleted) {
+              setStudyRoomMessages(prev => prev.map(m => {
+                if (m.id === updatedSrm.id) {
+                  return { ...m, isDeleted: true, deletedBy: updatedSrm.deleted_by || 'المشرف' };
+                }
+                return m;
+              }));
+            }
           }
         }
       )
@@ -428,7 +763,7 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [activeSchoolId, selectedTicket?.id, selectedConversation?.id, selectedGroup?.id]);
+  }, [activeSchoolId]);
 
   // -------------------------------------------------------------
   // HANDLERS: SUPPORT TICKETS
@@ -813,7 +1148,7 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
 
             <button
               onClick={() => setActiveTab('direct')}
-              className={`px-3 sm:px-4 py-2.5 rounded-xl text-xs font-black transition flex items-center gap-2 ${
+              className={`px-3 sm:px-4 py-2.5 rounded-xl text-xs font-black transition flex items-center gap-2 relative ${
                 activeTab === 'direct'
                   ? 'bg-white text-indigo-900 shadow-md'
                   : 'text-white hover:bg-white/10'
@@ -821,6 +1156,12 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
             >
               <MessageCircle className="w-4 h-4 text-indigo-600" />
               <span>المحادثات المباشرة ({conversations.length})</span>
+              {conversations.some(c => isConvUnread(c)) && (
+                <span className="flex h-2 w-2 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                </span>
+              )}
             </button>
 
             <button
@@ -1174,18 +1515,30 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
                   }
                 };
 
+                const unread = isConvUnread(conv);
+
                 return (
                   <div
                     key={conv.id}
-                    onClick={() => setSelectedConversation(conv)}
-                    className={`p-4 rounded-2xl border cursor-pointer transition space-y-2 ${
+                    onClick={() => handleSelectConversation(conv)}
+                    className={`p-4 rounded-2xl border cursor-pointer transition space-y-2 relative ${
                       isSelected
                         ? 'bg-slate-900 text-white border-slate-800 shadow-xl'
+                        : unread
+                        ? 'bg-indigo-50/70 text-slate-900 border-indigo-200 hover:border-indigo-400 shadow-sm ring-1 ring-indigo-300/40'
                         : 'bg-white text-slate-900 border-slate-200 hover:border-indigo-300 shadow-sm'
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      {getRoleBadge(conv.conversationType)}
+                      <div className="flex items-center gap-1.5">
+                        {getRoleBadge(conv.conversationType)}
+                        {unread && !isSelected && (
+                          <span className="bg-rose-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full animate-pulse flex items-center gap-0.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-white"></span>
+                            <span>جديد</span>
+                          </span>
+                        )}
+                      </div>
                       <span className={`text-[10px] ${isSelected ? 'text-slate-400' : 'text-slate-400'}`}>
                         {conv.lastMessageTime || 'الآن'}
                       </span>
@@ -1193,7 +1546,7 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
 
                     <h4 className="font-extrabold text-xs leading-snug line-clamp-1">{conv.title}</h4>
 
-                    <p className={`text-[11px] line-clamp-1 ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
+                    <p className={`text-[11px] line-clamp-1 ${isSelected ? 'text-slate-300' : unread ? 'text-indigo-950 font-bold' : 'text-slate-500'}`}>
                       {conv.lastMessage || 'لا توجد رسائل سابقة'}
                     </p>
 
@@ -1201,6 +1554,12 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
                       <span className={isSelected ? 'text-indigo-300' : 'text-indigo-600'}>
                         {conv.createdByName || 'المشرف'}
                       </span>
+                      {isSelected && (
+                        <span className="flex items-center gap-1 text-[9px] text-emerald-400 font-bold">
+                          <CheckCheck className="w-3 h-3" />
+                          <span>مقروءة</span>
+                        </span>
+                      )}
                     </div>
                   </div>
                 );
@@ -1872,6 +2231,58 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
         onSubmitHomework={handleHomeworkSubmit}
         centralBooks={centralBooks}
       />
+
+      {/* Realtime Toast Notification Banner */}
+      {incomingToast && (
+        <div className="fixed bottom-6 start-6 z-50 max-w-sm w-full bg-slate-900 text-white rounded-2xl p-4 shadow-2xl border border-slate-700 animate-slide-up flex items-start gap-3">
+          <div className="p-2 bg-indigo-600/30 rounded-xl text-indigo-400 shrink-0 mt-0.5">
+            <Bell className="w-5 h-5 animate-bounce" />
+          </div>
+          <div className="flex-1 min-w-0 space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-300">
+                {incomingToast.channelTitle}
+              </span>
+              <button
+                onClick={() => setIncomingToast(null)}
+                className="text-slate-400 hover:text-white transition"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <p className="text-xs font-bold text-slate-100 truncate">
+              {incomingToast.senderName}
+            </p>
+            <p className="text-[11px] text-slate-300 line-clamp-2 leading-relaxed">
+              {incomingToast.text}
+            </p>
+            <div className="pt-1">
+              <button
+                onClick={() => {
+                  if (incomingToast.type === 'direct') {
+                    setActiveTab('direct');
+                    const conv = conversations.find(c => c.id === incomingToast.targetId);
+                    if (conv) handleSelectConversation(conv);
+                  } else if (incomingToast.type === 'ticket') {
+                    setActiveTab('tickets');
+                    const ticket = ticketsList.find(t => t.id === incomingToast.targetId);
+                    if (ticket) setSelectedTicket(ticket);
+                  } else if (incomingToast.type === 'room') {
+                    setActiveTab('groups');
+                    const group = studyRooms.find(r => r.id === incomingToast.targetId);
+                    if (group) setSelectedGroup(group);
+                  }
+                  setIncomingToast(null);
+                }}
+                className="text-[10px] font-black text-indigo-400 hover:text-indigo-300 underline flex items-center gap-1"
+              >
+                <span>عرض الرسالة الآن</span>
+                <span>←</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
